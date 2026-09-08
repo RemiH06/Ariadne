@@ -4,3 +4,9 @@ steps.md
 # Added by cargo
 
 /target
+
+# Node (client/ y tools/ son solo herramientas de build del mantenedor)
+node_modules/
+
+# artefactos de prueba manual
+/sample.html

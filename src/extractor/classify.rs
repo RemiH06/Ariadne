@@ -93,7 +93,6 @@ fn language_for_extension(ext: &str) -> Option<&'static str> {
         "scss" | "sass" => "sass",
         "md" | "markdown" => "markdown",
         "yml" | "yaml" => "yaml",
-        "toml" => "toml",
         "json" => "json",
         "sh" | "bash" => "bash",
         "ps1" => "powershell",

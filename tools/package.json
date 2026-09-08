@@ -1,0 +1,12 @@
+{
+  "name": "ariadne-tools",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:icons": "node build-icon-sprite.mjs"
+  },
+  "dependencies": {
+    "devicon": "^2.16.0"
+  }
+}
