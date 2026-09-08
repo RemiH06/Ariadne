@@ -1,6 +1,7 @@
 mod pandoc;
 
 use crate::schema::{Graph, GraphNode, NodeType};
+use crate::utils::slugify;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -104,21 +105,4 @@ pub fn render_docs(
     }
 
     Ok(written)
-}
-
-fn slugify(input: &str) -> String {
-    let normalized: String = input
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
-        .collect();
-    let collapsed = normalized
-        .split('-')
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    if collapsed.is_empty() {
-        "ariadne".to_string()
-    } else {
-        collapsed
-    }
 }

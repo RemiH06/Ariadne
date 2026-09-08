@@ -111,6 +111,32 @@ impl Default for HtmlConfig {
     }
 }
 
+impl HtmlConfig {
+    /// Preset claro, elegido explícitamente vía `--theme light` en la CLI.
+    /// `conf.ariadne` sigue siendo la vía directa para personalizar campos
+    /// individuales sin pasar por un preset.
+    pub fn light_preset() -> Self {
+        Self {
+            theme: "light".to_string(),
+            background: "#f5f5f7".to_string(),
+            link_color: "#c7c7cc".to_string(),
+            text_color: "#1c1c1e".to_string(),
+            colors: ColorsConfig {
+                default: "#007aff".to_string(),
+                directory: "#ff9500".to_string(),
+                file: "#007aff".to_string(),
+                class: "#34c759".to_string(),
+                object: "#30b0c7".to_string(),
+                attribute: "#ff2d92".to_string(),
+                method: "#5ac8fa".to_string(),
+                library: "#ff6b35".to_string(),
+                import: "#ff3b30".to_string(),
+            },
+            icons: IconsConfig::default(),
+        }
+    }
+}
+
 /// Un color por `NodeType`. `default` es el fallback para cualquier tipo sin
 /// entrada explícita — incluyendo tipos futuros que aún no existen aquí.
 #[derive(Debug, Deserialize, Serialize, Clone)]

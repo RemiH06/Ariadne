@@ -1,3 +1,3 @@
-fn main() {
-    println!("ariadne v{}", env!("CARGO_PKG_VERSION"));
+fn main() -> anyhow::Result<()> {
+    ariadne::cli::run()
 }

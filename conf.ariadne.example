@@ -1,0 +1,51 @@
+# Configuración de ejemplo para Ariadne. Copia este archivo como
+# "conf.ariadne" en la raíz del proyecto que quieres documentar (o
+# apúntale con --config) y ajusta lo que necesites.
+#
+# Precedencia: flags de CLI > este archivo > defaults del programa.
+
+[project]
+name = "MyProject"
+path = "."
+description = "Documentación generada con Ariadne"
+
+[output]
+formats = ["html", "pdf"]
+dir = "./docs"
+
+[output.html]
+theme = "dark"
+background = "#1e1e2e"
+link_color = "#585b70"
+text_color = "#cdd6f4"
+
+[output.html.colors]
+default   = "#89b4fa"
+directory = "#f9e2af"
+file      = "#89b4fa"
+class     = "#a6e3a1"
+object    = "#94e2d5"
+attribute = "#f5c2e7"
+method    = "#89dceb"
+library   = "#fab387"
+import    = "#eba0ac"
+
+[output.html.icons]
+enabled = true
+set = "devicon"
+
+[output.pandoc]
+binary = "pandoc"
+pdf_engine = "pdflatex"
+
+[filters]
+max_depth = 5
+hide_generated = true
+hide_extensions = [".lock", ".log", ".min.js"]
+hide_paths = ["**/node_modules/**", "**/.git/**"]
+
+[ignore]
+extra = ["scratch/", "*.tmp"]
+
+[languages]
+detect = "auto"
