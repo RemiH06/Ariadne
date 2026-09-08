@@ -31,6 +31,10 @@ pub struct NodeMetadata {
     pub extension: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
+    /// Líneas del archivo, con corte en `LINE_COUNT_CAP` (ver extractor::classify).
+    /// `None` para directorios/raíz.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]

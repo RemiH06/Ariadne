@@ -25,6 +25,8 @@ fn includes_expected_files() {
         "src",
         "src/main.rs",
         "src/lib.py",
+        "src/big.js",
+        "src/medium.py",
         "dist",
         "dist/bundle.min.js",
     ] {
@@ -69,7 +71,7 @@ fn computes_depth_and_child_count() {
 
     let src = g.nodes.iter().find(|n| n.id == "src").unwrap();
     assert_eq!(src.depth, 1);
-    assert_eq!(src.metadata.child_count, Some(2));
+    assert_eq!(src.metadata.child_count, Some(4));
 
     let main_rs = g.nodes.iter().find(|n| n.id == "src/main.rs").unwrap();
     assert_eq!(main_rs.depth, 2);
@@ -77,4 +79,18 @@ fn computes_depth_and_child_count() {
     let root = g.nodes.iter().find(|n| n.id == ".").unwrap();
     assert_eq!(root.node_type, NodeType::Root);
     assert_eq!(root.metadata.child_count, Some(3));
+}
+
+#[test]
+fn computes_line_count_and_caps_at_2000() {
+    let g = sample_graph();
+
+    let medium = g.nodes.iter().find(|n| n.id == "src/medium.py").unwrap();
+    assert_eq!(medium.metadata.line_count, Some(60));
+
+    let big = g.nodes.iter().find(|n| n.id == "src/big.js").unwrap();
+    assert_eq!(big.metadata.line_count, Some(2000), "un archivo de 2500 líneas debe cortarse en 2000");
+
+    let src_dir = g.nodes.iter().find(|n| n.id == "src").unwrap();
+    assert_eq!(src_dir.metadata.line_count, None, "los directorios no tienen line_count");
 }

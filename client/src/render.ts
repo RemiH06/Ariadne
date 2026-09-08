@@ -4,8 +4,11 @@ import { linkHorizontal } from "d3-shape";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
 import type { GraphNode, RenderConfig, TreeNode } from "./types.js";
 
-const NODE_RADIUS = 5;
-const SIBLING_GAP = 24;
+const DEFAULT_RADIUS = 5; // raíz / directorios
+const MIN_FILE_RADIUS = 4;
+const MAX_FILE_RADIUS = 14;
+const LINE_COUNT_CAP = 2000; // debe coincidir con extractor::classify::LINE_COUNT_CAP
+const SIBLING_GAP = 32;
 const LEVEL_WIDTH = 160;
 
 export interface RenderCallbacks {
@@ -72,7 +75,7 @@ export class DiagramRenderer {
 
     nodeGroups
       .append("circle")
-      .attr("r", NODE_RADIUS)
+      .attr("r", (d) => this.radiusFor(this.graphNode(d)))
       .attr("fill", (d) => this.colorFor(this.graphNode(d).node_type))
       .attr("stroke", this.config.html.background)
       .attr("stroke-width", 1.5);
@@ -83,13 +86,16 @@ export class DiagramRenderer {
       .attr("href", (d) => `#icon-${this.graphNode(d).metadata.icon_key}`)
       .attr("width", 14)
       .attr("height", 14)
-      .attr("x", 8)
+      .attr("x", (d) => this.radiusFor(this.graphNode(d)) + 3)
       .attr("y", -7);
 
     nodeGroups
       .append("text")
       .attr("class", "ariadne-node-label")
-      .attr("x", (d) => (this.hasIcon(this.graphNode(d)) ? 26 : 10))
+      .attr("x", (d) => {
+        const r = this.radiusFor(this.graphNode(d));
+        return this.hasIcon(this.graphNode(d)) ? r + 21 : r + 5;
+      })
       .attr("dy", "0.32em")
       .attr("fill", this.config.html.text_color)
       .style("font", "12px system-ui, sans-serif")
@@ -103,6 +109,17 @@ export class DiagramRenderer {
 
   private graphNode(d: HierarchyPointNode<TreeNode>): GraphNode {
     return d.data.data;
+  }
+
+  /** Radio del nodo: fijo para raíz/directorios, proporcional al área
+   * (raíz cuadrada del conteo de líneas) para archivos — así el tamaño
+   * *percibido* crece con las líneas, no solo el radio crudo. */
+  private radiusFor(node: GraphNode): number {
+    if (node.node_type !== "file") return DEFAULT_RADIUS;
+    const lines = node.metadata.line_count;
+    if (!lines || lines <= 0) return MIN_FILE_RADIUS;
+    const t = Math.sqrt(Math.min(lines, LINE_COUNT_CAP) / LINE_COUNT_CAP);
+    return MIN_FILE_RADIUS + t * (MAX_FILE_RADIUS - MIN_FILE_RADIUS);
   }
 
   private hasIcon(node: GraphNode): boolean {

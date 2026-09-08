@@ -14,6 +14,7 @@ export type EdgeType = "contains" | "depends_on";
 export interface NodeMetadata {
   extension?: string;
   size_bytes?: number;
+  line_count?: number;
   child_count?: number;
   is_generated?: boolean;
   icon_key?: string;

@@ -34,6 +34,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                 metadata: NodeMetadata {
                     extension: c.extension,
                     size_bytes: c.size_bytes,
+                    line_count: c.line_count,
                     child_count: None,
                     is_generated: Some(c.is_generated),
                     icon_key: c.icon_key,
