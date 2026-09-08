@@ -135,6 +135,33 @@ impl HtmlConfig {
             icons: IconsConfig::default(),
         }
     }
+
+    /// Si `theme` pide un preset conocido (ej. "light" en conf.ariadne),
+    /// aplica sus colores solo en los campos que sigan en el valor default
+    /// oscuro — así no pisa personalizaciones explícitas que el usuario haya
+    /// puesto junto a `theme` en el mismo archivo. Sin esto, escribir
+    /// `theme = "light"` sin tocar el resto de campos no cambiaba nada,
+    /// porque `#[serde(default)]` ya los había llenado con los valores
+    /// oscuros antes de que este método corriera.
+    pub fn apply_theme_preset(&mut self) {
+        let dark = Self::default();
+        let preset = match self.theme.as_str() {
+            "light" => Self::light_preset(),
+            _ => return,
+        };
+        if self.background == dark.background {
+            self.background = preset.background;
+        }
+        if self.link_color == dark.link_color {
+            self.link_color = preset.link_color;
+        }
+        if self.text_color == dark.text_color {
+            self.text_color = preset.text_color;
+        }
+        if self.colors.default == dark.colors.default {
+            self.colors = preset.colors;
+        }
+    }
 }
 
 /// Un color por `NodeType`. `default` es el fallback para cualquier tipo sin

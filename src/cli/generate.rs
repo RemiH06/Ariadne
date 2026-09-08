@@ -53,6 +53,7 @@ pub struct GenerateArgs {
 
 pub fn run(args: GenerateArgs) -> Result<()> {
     let mut cfg = AriadneConfig::load(args.config.as_deref())?;
+    cfg.output.html.apply_theme_preset();
     apply_overrides(&mut cfg, &args);
 
     if cfg.output.formats.is_empty() {

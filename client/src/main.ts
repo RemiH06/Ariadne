@@ -1,5 +1,6 @@
 import { buildFilteredTree, readEmbeddedJson, type FilterState } from "./data.js";
 import { initFilterControls } from "./filters-ui.js";
+import { LAYOUT_DIRECTIONS, type LayoutDirection } from "./layout.js";
 import { DiagramRenderer } from "./render.js";
 import type { Graph, RenderConfig } from "./types.js";
 
@@ -25,9 +26,12 @@ function main(): void {
     },
   });
 
+  let hasRenderedOnce = false;
   function rerender(): void {
-    const tree = buildFilteredTree(graph, filterState, collapsed);
-    if (tree) renderer.render(tree);
+    const filteredTree = buildFilteredTree(graph, filterState, collapsed);
+    if (!filteredTree) return;
+    renderer.render(filteredTree, { refit: !hasRenderedOnce });
+    hasRenderedOnce = true;
   }
 
   const hideGeneratedInput = document.getElementById("ariadne-filter-hide-generated") as HTMLInputElement | null;
@@ -44,6 +48,29 @@ function main(): void {
       }
     );
   }
+
+  const totalDepth = graph.nodes.reduce((max, n) => Math.max(max, n.depth), 0);
+  const depthIndicator = document.getElementById("ariadne-depth-indicator");
+  if (depthIndicator) depthIndicator.textContent = String(totalDepth);
+
+  const fitButton = document.getElementById("ariadne-fit-btn");
+  fitButton?.addEventListener("click", () => renderer.fit());
+
+  const directionButtons = document.querySelectorAll<HTMLButtonElement>("[data-direction]");
+  const setActiveDirectionButton = (direction: LayoutDirection) => {
+    directionButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.direction === direction);
+    });
+  };
+  directionButtons.forEach((btn) => {
+    const direction = btn.dataset.direction as LayoutDirection | undefined;
+    if (!direction || !LAYOUT_DIRECTIONS.includes(direction)) return;
+    btn.addEventListener("click", () => {
+      renderer.setDirection(direction);
+      setActiveDirectionButton(direction);
+    });
+  });
+  setActiveDirectionButton(renderer.getDirection());
 
   rerender();
 }

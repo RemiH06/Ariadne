@@ -1,0 +1,18 @@
+# Config de Ariadne para mapoDoufu (mapo1 quedó obsoleto).
+# Uso: desde la raíz de este repo,
+#   ariadne generate --config input/mapo.conf.ariadne
+
+[project]
+name = "Mapo"
+path = "C:/Users/hecto/OneDrive/Escritorio/Personal/iroFactory/21.Mapo/mapoDoufu"
+description = "Diagrama de mapoDoufu"
+
+[output]
+formats = ["html"]
+dir = "./output/mapo"
+
+[output.html]
+theme = "light"
+
+[filters]
+hide_generated = true
