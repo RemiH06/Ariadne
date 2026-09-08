@@ -1,18 +1,21 @@
 import { hierarchy, tree, type HierarchyNode, type HierarchyPointNode } from "d3-hierarchy";
 import { select, type Selection } from "d3-selection";
+import { linkRadial } from "d3-shape";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
-import { DIRECTION_VECTORS, type LayoutDirection, type Vec2 } from "./layout.js";
+import { DIRECTION_VECTORS, type LayoutMode, type Vec2 } from "./layout.js";
 import type { GraphNode, RenderConfig, TreeNode } from "./types.js";
 
 const LINE_COUNT_CAP = 2000; // debe coincidir con extractor::classify::LINE_COUNT_CAP
-const SIBLING_GAP = 44;
-const LEVEL_GAP = 64;
+const LEVEL_GAP = 90; // separación extra entre niveles/anillos
 const ICON_SIZE = 16;
 const PADDING_X = 12;
 const MIN_BOX_HEIGHT = 24;
 const BASE_PADDING_Y = 6;
 const MAX_EXTRA_PADDING_Y = 14; // padding vertical extra para archivos grandes (hasta LINE_COUNT_CAP)
 const MAX_LABEL_WIDTH = 200; // un solo label larguísimo no debe inflar el espaciado de las 8 orientaciones
+const RADIAL_SEPARATION_SCALE = 2.2; // ajuste empírico para que los anillos internos no se amontonen
+const SUB_LANE_GAP = 16; // separación entre sub-filas dentro de un mismo nivel (menor que LEVEL_GAP)
+const SIBLING_FLOW_GAP = 14; // separación entre cajas consecutivas dentro de una sub-fila
 
 interface BoxGeom {
   width: number;
@@ -20,9 +23,12 @@ interface BoxGeom {
 }
 
 interface PositionedNode {
-  hnode: HierarchyPointNode<TreeNode>;
+  hnode: HierarchyNode<TreeNode>;
   center: Vec2;
   geom: BoxGeom;
+  /** Para el modo radial: ángulo (rad) y radio del nodo, usados por el
+   * generador de links polares. Ausente en los modos lineales. */
+  polar?: { angle: number; radius: number };
 }
 
 export interface RenderCallbacks {
@@ -35,7 +41,7 @@ export class DiagramRenderer {
   private readonly config: RenderConfig;
   private readonly callbacks: RenderCallbacks;
   private readonly zoomBehavior = zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 8]);
-  private direction: LayoutDirection = "left-right";
+  private direction: LayoutMode = "left-right";
   private lastTree: TreeNode | null = null;
 
   constructor(svgEl: SVGSVGElement, config: RenderConfig, callbacks: RenderCallbacks) {
@@ -51,12 +57,12 @@ export class DiagramRenderer {
     this.svg.call(this.zoomBehavior);
   }
 
-  setDirection(direction: LayoutDirection): void {
+  setDirection(direction: LayoutMode): void {
     this.direction = direction;
     if (this.lastTree) this.render(this.lastTree, { refit: true });
   }
 
-  getDirection(): LayoutDirection {
+  getDirection(): LayoutMode {
     return this.direction;
   }
 
@@ -68,13 +74,11 @@ export class DiagramRenderer {
 
   render(rootTree: TreeNode, opts: { refit?: boolean } = {}): void {
     this.lastTree = rootTree;
-    const { depth: depthVec, sibling: sibVec } = DIRECTION_VECTORS[this.direction];
 
     const rootHierarchy = hierarchy<TreeNode>(rootTree, (d) => d.children);
     // Estructura (sin x/y todavía) para la pasada de medición: el espaciado
-    // real entre hermanos depende del tamaño de las cajas, que solo se
-    // conoce después de medir el texto — el layout de d3 corre más abajo,
-    // una vez calculado `siblingStep`.
+    // real depende del tamaño de las cajas, que solo se conoce después de
+    // medir el texto — el layout de d3 corre más abajo.
     const nodes = rootHierarchy.descendants();
 
     this.viewport.selectAll("*").remove();
@@ -106,9 +110,9 @@ export class DiagramRenderer {
       .text((d) => this.graphNode(d).label);
 
     // Truncar con elipsis las etiquetas larguísimas: sin esto, un solo
-    // nombre largo infla el espaciado uniforme compartido por las 8
-    // orientaciones y termina forzando un zoom-out extremo de todo el árbol.
-    // Se agrega un <title> con el nombre completo como tooltip al pasar el mouse.
+    // nombre largo infla el espaciado uniforme compartido por todo el árbol
+    // y termina forzando un zoom-out extremo. Se agrega un <title> con el
+    // nombre completo como tooltip al pasar el mouse.
     textSel.each((d, i, groups) => {
       const textEl = groups[i] as SVGTextElement;
       const fullLabel = this.graphNode(d).label;
@@ -131,39 +135,11 @@ export class DiagramRenderer {
       });
     });
 
-    // Paso de espaciado: se proyecta cada caja sobre el eje real de
-    // profundidad/hermanos de la orientación elegida (no el máximo entre
-    // ancho y alto a ciegas) — así left-right sigue usando solo el alto de
-    // la caja para separar hermanos, top-bottom solo el ancho, y las
-    // diagonales combinan ambos proporcionalmente, sin desperdiciar espacio
-    // ni producir superposiciones en ningún caso.
-    let maxDepthHalfExtent = MIN_BOX_HEIGHT / 2;
-    let maxSiblingHalfExtent = MIN_BOX_HEIGHT / 2;
-    for (const geom of geomById.values()) {
-      const halfW = geom.width / 2;
-      const halfH = geom.height / 2;
-      maxDepthHalfExtent = Math.max(maxDepthHalfExtent, halfW * Math.abs(depthVec.x) + halfH * Math.abs(depthVec.y));
-      maxSiblingHalfExtent = Math.max(maxSiblingHalfExtent, halfW * Math.abs(sibVec.x) + halfH * Math.abs(sibVec.y));
-    }
-    const depthStep = maxDepthHalfExtent * 2 + LEVEL_GAP;
-    const siblingStep = maxSiblingHalfExtent * 2 + (SIBLING_GAP - MIN_BOX_HEIGHT);
+    const { positioned, links, pathFor } =
+      this.direction === "radial"
+        ? this.layoutRadial(rootHierarchy, geomById)
+        : this.layoutLinear(rootHierarchy, geomById, DIRECTION_VECTORS[this.direction]);
 
-    // Recién ahora corre el layout de d3, con el paso de espaciado final —
-    // así `hnode.x` ya viene correctamente escalado y no hace falta
-    // reescalarlo después (eso era lo que componía el error en todo el árbol).
-    const laidOut = tree<TreeNode>().nodeSize([siblingStep, 1])(rootHierarchy);
-    const pointNodes = laidOut.descendants();
-
-    const positioned: PositionedNode[] = pointNodes.map((hnode) => {
-      const geom = geomById.get(this.graphNode(hnode).id)!;
-      const depthPos = hnode.depth * depthStep;
-      const siblingPos = hnode.x;
-      const center: Vec2 = {
-        x: depthPos * depthVec.x + siblingPos * sibVec.x,
-        y: depthPos * depthVec.y + siblingPos * sibVec.y,
-      };
-      return { hnode, center, geom };
-    });
     const positionById = new Map<string, PositionedNode>();
     for (const p of positioned) positionById.set(this.graphNode(p.hnode).id, p);
 
@@ -203,29 +179,178 @@ export class DiagramRenderer {
       .attr("x", (d) => -geomById.get(this.graphNode(d).id)!.width / 2 + PADDING_X - 2)
       .attr("y", -ICON_SIZE / 2);
 
-    // Links: salen de la caja del padre en la dirección de "profundidad" y
-    // entran a la del hijo desde la dirección opuesta, sin importar la
-    // orientación elegida.
     linkLayer
       .selectAll("path")
-      .data(laidOut.links())
+      .data(links)
       .join("path")
-      .attr("d", (link) => {
-        const source = positionById.get(this.graphNode(link.source).id)!;
-        const target = positionById.get(this.graphNode(link.target).id)!;
-        const exitDist = boxExitDistance(source.geom, depthVec);
-        const entryDist = boxExitDistance(target.geom, depthVec);
-        const exit: Vec2 = { x: source.center.x + depthVec.x * exitDist, y: source.center.y + depthVec.y * exitDist };
-        const entry: Vec2 = { x: target.center.x - depthVec.x * entryDist, y: target.center.y - depthVec.y * entryDist };
-        const dist = Math.hypot(entry.x - exit.x, entry.y - exit.y) / 2;
-        const c1: Vec2 = { x: exit.x + depthVec.x * dist, y: exit.y + depthVec.y * dist };
-        const c2: Vec2 = { x: entry.x - depthVec.x * dist, y: entry.y - depthVec.y * dist };
-        return `M${exit.x},${exit.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${entry.x},${entry.y}`;
-      });
+      .attr("d", (link) => pathFor(link));
 
     if (opts.refit) {
       this.fitToViewport(positioned);
     }
+  }
+
+  /** Árbol lineal: un vector de "profundidad" y uno de "hermanos" fijos
+   * para todo el árbol (las 8 direcciones del compás). */
+  private layoutLinear(
+    rootHierarchy: HierarchyNode<TreeNode>,
+    geomById: Map<string, BoxGeom>,
+    vectors: { depth: Vec2; sibling: Vec2 }
+  ): { positioned: PositionedNode[]; links: Array<{ source: HierarchyNode<TreeNode>; target: HierarchyNode<TreeNode> }>; pathFor: (link: any) => string } {
+    const { depth: depthVec, sibling: sibVec } = vectors;
+    const allNodes = rootHierarchy.descendants(); // pre-order: mantiene hermanos/parientes agrupados
+
+    // Grosor de una sub-fila: proyección de la caja sobre el eje de
+    // profundidad (igual que antes), usado para separar los niveles Y las
+    // sub-filas dentro de un mismo nivel.
+    let maxDepthHalfExtent = MIN_BOX_HEIGHT / 2;
+    for (const geom of geomById.values()) {
+      const halfW = geom.width / 2;
+      const halfH = geom.height / 2;
+      maxDepthHalfExtent = Math.max(maxDepthHalfExtent, halfW * Math.abs(depthVec.x) + halfH * Math.abs(depthVec.y));
+    }
+    const subLaneThickness = maxDepthHalfExtent * 2 + SUB_LANE_GAP;
+
+    const svgNode = this.svg.node();
+    const viewportWidth = svgNode?.clientWidth || 800;
+    const viewportHeight = svgNode?.clientHeight || 600;
+    const siblingAxisViewportSize = Math.abs(sibVec.x) * viewportWidth + Math.abs(sibVec.y) * viewportHeight;
+    const availableBreadth = Math.max(siblingAxisViewportSize * 0.92, 300);
+
+    // Cada nivel es una franja 2D, no una sola línea: los hermanos de un
+    // mismo nivel se acomodan uno tras otro a lo largo del eje "hermanos"
+    // (usando el 100% del ancho/alto disponible) y saltan a una sub-fila
+    // nueva cuando no caben más — como un texto que hace salto de línea.
+    // Así varios nodos del mismo nivel terminan en "alturas" (posiciones de
+    // profundidad) distintas sin dejar de pertenecer al mismo nivel, y un
+    // nivel con muchos hermanos deja de estirarse como una sola línea larga.
+    interface FlowPos {
+      row: number;
+      breadthCenter: number;
+    }
+    const byDepth = new Map<number, HierarchyNode<TreeNode>[]>();
+    let maxDepth = 0;
+    for (const n of allNodes) {
+      if (!byDepth.has(n.depth)) byDepth.set(n.depth, []);
+      byDepth.get(n.depth)!.push(n);
+      if (n.depth > maxDepth) maxDepth = n.depth;
+    }
+
+    const flowById = new Map<string, FlowPos>();
+    const rowsUsedAtDepth = new Map<number, number>();
+    for (const [depth, group] of byDepth) {
+      let row = 0;
+      let cursor = 0;
+      for (const n of group) {
+        const geom = geomById.get(this.graphNode(n).id)!;
+        const halfW = geom.width / 2;
+        const halfH = geom.height / 2;
+        const breadthExtent = halfW * Math.abs(sibVec.x) + halfH * Math.abs(sibVec.y);
+        const size = breadthExtent * 2 + SIBLING_FLOW_GAP;
+        if (cursor > 0 && cursor + size > availableBreadth) {
+          row += 1;
+          cursor = 0;
+        }
+        flowById.set(this.graphNode(n).id, { row, breadthCenter: cursor + breadthExtent });
+        cursor += size;
+      }
+      rowsUsedAtDepth.set(depth, row + 1);
+    }
+
+    // Posición base (eje de profundidad) de cada nivel: acumula el grosor
+    // total (todas sus sub-filas) del nivel anterior más el espacio normal
+    // entre niveles, para que un nivel con varias sub-filas no se encime
+    // con el siguiente.
+    const levelBaseDepthPos = new Map<number, number>([[0, 0]]);
+    for (let d = 1; d <= maxDepth; d++) {
+      const prevBase = levelBaseDepthPos.get(d - 1)!;
+      const prevRows = rowsUsedAtDepth.get(d - 1) ?? 1;
+      levelBaseDepthPos.set(d, prevBase + prevRows * subLaneThickness + LEVEL_GAP);
+    }
+
+    const positioned: PositionedNode[] = allNodes.map((hnode) => {
+      const geom = geomById.get(this.graphNode(hnode).id)!;
+      const flow = flowById.get(this.graphNode(hnode).id)!;
+      const depthPos = levelBaseDepthPos.get(hnode.depth)! + flow.row * subLaneThickness;
+      const siblingPos = flow.breadthCenter;
+      const center: Vec2 = {
+        x: depthPos * depthVec.x + siblingPos * sibVec.x,
+        y: depthPos * depthVec.y + siblingPos * sibVec.y,
+      };
+      return { hnode, center, geom };
+    });
+
+    const positionById = new Map<string, PositionedNode>();
+    for (const p of positioned) positionById.set(this.graphNode(p.hnode).id, p);
+
+    const pathFor = (link: { source: HierarchyNode<TreeNode>; target: HierarchyNode<TreeNode> }): string => {
+      const source = positionById.get(this.graphNode(link.source).id)!;
+      const target = positionById.get(this.graphNode(link.target).id)!;
+      const exitDist = boxExitDistance(source.geom, depthVec);
+      const entryDist = boxExitDistance(target.geom, depthVec);
+      const exit: Vec2 = { x: source.center.x + depthVec.x * exitDist, y: source.center.y + depthVec.y * exitDist };
+      const entry: Vec2 = { x: target.center.x - depthVec.x * entryDist, y: target.center.y - depthVec.y * entryDist };
+      const dist = Math.hypot(entry.x - exit.x, entry.y - exit.y) / 2;
+      const c1: Vec2 = { x: exit.x + depthVec.x * dist, y: exit.y + depthVec.y * dist };
+      const c2: Vec2 = { x: entry.x - depthVec.x * dist, y: entry.y - depthVec.y * dist };
+      return `M${exit.x},${exit.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${entry.x},${entry.y}`;
+    };
+
+    return { positioned, links: rootHierarchy.links(), pathFor };
+  }
+
+  /** Árbol radial: la raíz al centro, un anillo más separado por nivel
+   * (radio = profundidad * paso), y los hijos de cada nodo repartidos en
+   * círculo alrededor de él — nada va "en una sola dirección", así que un
+   * árbol ancho y poco profundo aprovecha el espacio en 2D en vez de
+   * estirarse como una línea delgada. */
+  private layoutRadial(
+    rootHierarchy: HierarchyNode<TreeNode>,
+    geomById: Map<string, BoxGeom>
+  ): { positioned: PositionedNode[]; links: Array<{ source: HierarchyNode<TreeNode>; target: HierarchyNode<TreeNode> }>; pathFor: (link: any) => string } {
+    let maxCircumRadius = MIN_BOX_HEIGHT / 2;
+    for (const geom of geomById.values()) {
+      maxCircumRadius = Math.max(maxCircumRadius, Math.hypot(geom.width, geom.height) / 2);
+    }
+    const minDepthStep = maxCircumRadius * 2 + LEVEL_GAP;
+
+    const maxDepth = Math.max(...rootHierarchy.descendants().map((n) => n.depth), 1);
+    const svgNode = this.svg.node();
+    const viewportWidth = svgNode?.clientWidth || 800;
+    const viewportHeight = svgNode?.clientHeight || 600;
+    const availableRadius = (Math.min(viewportWidth, viewportHeight) / 2) * 0.9;
+    const depthStep = Math.max(minDepthStep, availableRadius / maxDepth);
+
+    const radialLayout = tree<TreeNode>()
+      .size([2 * Math.PI, 1])
+      .separation((a, b) => (RADIAL_SEPARATION_SCALE * (a.parent === b.parent ? 1 : 2)) / Math.max(a.depth, 1));
+    const laidOut = radialLayout(rootHierarchy);
+    const pointNodes = laidOut.descendants();
+
+    const positioned: PositionedNode[] = pointNodes.map((hnode) => {
+      const geom = geomById.get(this.graphNode(hnode).id)!;
+      const angle = hnode.x - Math.PI / 2;
+      const radius = hnode.depth * depthStep;
+      const center: Vec2 = { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
+      return { hnode, center, geom, polar: { angle, radius } };
+    });
+
+    const positionById = new Map<string, PositionedNode>();
+    for (const p of positioned) positionById.set(this.graphNode(p.hnode).id, p);
+
+    const radialLinkGen = linkRadial<unknown, { x: number; y: number }>()
+      .angle((d) => d.x)
+      .radius((d) => d.y);
+
+    const pathFor = (link: { source: HierarchyPointNode<TreeNode>; target: HierarchyPointNode<TreeNode> }): string => {
+      const source = positionById.get(this.graphNode(link.source).id)!;
+      const target = positionById.get(this.graphNode(link.target).id)!;
+      const s = { x: source.polar!.angle + Math.PI / 2, y: source.polar!.radius };
+      const t = { x: target.polar!.angle + Math.PI / 2, y: target.polar!.radius };
+      return radialLinkGen({ source: s, target: t } as never) ?? "";
+    };
+
+    return { positioned, links: laidOut.links(), pathFor };
   }
 
   private graphNode(d: HierarchyNode<TreeNode>): GraphNode {

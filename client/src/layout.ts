@@ -50,3 +50,12 @@ export const LAYOUT_DIRECTIONS: LayoutDirection[] = [
   "bottom-top",
   "from-bottomright",
 ];
+
+/** Modo de layout: las 8 direcciones lineales, o "radial" (raíz al centro,
+ * un anillo más separado por nivel, hijos repartidos en círculo alrededor
+ * de su padre) — mejor aprovechamiento del espacio para árboles anchos y
+ * poco profundos, donde cualquier dirección lineal termina viéndose como
+ * una sola línea larga y delgada. */
+export type LayoutMode = LayoutDirection | "radial";
+
+export const LAYOUT_MODES: LayoutMode[] = [...LAYOUT_DIRECTIONS, "radial"];

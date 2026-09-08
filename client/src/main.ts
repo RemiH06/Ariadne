@@ -1,6 +1,6 @@
 import { buildFilteredTree, readEmbeddedJson, type FilterState } from "./data.js";
 import { initFilterControls } from "./filters-ui.js";
-import { LAYOUT_DIRECTIONS, type LayoutDirection } from "./layout.js";
+import { LAYOUT_MODES, type LayoutMode } from "./layout.js";
 import { DiagramRenderer } from "./render.js";
 import type { Graph, RenderConfig } from "./types.js";
 
@@ -57,14 +57,14 @@ function main(): void {
   fitButton?.addEventListener("click", () => renderer.fit());
 
   const directionButtons = document.querySelectorAll<HTMLButtonElement>("[data-direction]");
-  const setActiveDirectionButton = (direction: LayoutDirection) => {
+  const setActiveDirectionButton = (direction: LayoutMode) => {
     directionButtons.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.direction === direction);
     });
   };
   directionButtons.forEach((btn) => {
-    const direction = btn.dataset.direction as LayoutDirection | undefined;
-    if (!direction || !LAYOUT_DIRECTIONS.includes(direction)) return;
+    const direction = btn.dataset.direction as LayoutMode | undefined;
+    if (!direction || !LAYOUT_MODES.includes(direction)) return;
     btn.addEventListener("click", () => {
       renderer.setDirection(direction);
       setActiveDirectionButton(direction);

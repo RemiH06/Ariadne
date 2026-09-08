@@ -33,6 +33,7 @@ pub fn render(input: TemplateInput) -> String {
     let dir_btn_bottomleft = dir_button("from-bottomleft", 315, "Diagonal desde abajo-izquierda", false);
     let dir_btn_bottomtop = dir_button("bottom-top", 270, "De abajo hacia arriba", false);
     let dir_btn_bottomright = dir_button("from-bottomright", 225, "Diagonal desde abajo-derecha", false);
+    let dir_btn_radial = radial_button();
 
     format!(
         r##"<!doctype html>
@@ -134,10 +135,6 @@ pub fn render(input: TemplateInput) -> String {
     align-items: center;
     justify-content: center;
   }}
-  .ariadne-compass-center {{
-    width: 28px;
-    height: 28px;
-  }}
   .ariadne-dir-icon {{
     width: 15px;
     height: 15px;
@@ -175,6 +172,11 @@ pub fn render(input: TemplateInput) -> String {
     <symbol id="icon-dir-arrow" viewBox="0 0 24 24">
       <path d="M3 12h15m0 0l-5-5m5 5l-5 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
+    <symbol id="icon-radial" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="2.6" fill="currentColor"/>
+      <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/>
+      <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
+    </symbol>
     <symbol id="icon-fit-screen" viewBox="0 0 24 24">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
@@ -190,7 +192,7 @@ pub fn render(input: TemplateInput) -> String {
           {dir_btn_topbottom}
           {dir_btn_topright}
           {dir_btn_leftright}
-          <span class="ariadne-compass-center" aria-hidden="true"></span>
+          {dir_btn_radial}
           {dir_btn_rightleft}
           {dir_btn_bottomleft}
           {dir_btn_bottomtop}
@@ -225,6 +227,10 @@ fn dir_button(direction: &str, angle: u16, title: &str, active: bool) -> String 
     format!(
         r##"<button data-direction="{direction}" title="{title}" class="ariadne-btn{active_class}"><svg class="ariadne-dir-icon" viewBox="0 0 24 24"><use href="#icon-dir-arrow" transform="rotate({angle} 12 12)"/></svg></button>"##
     )
+}
+
+fn radial_button() -> String {
+    r##"<button data-direction="radial" title="Radial: la raíz al centro, un anillo por nivel" class="ariadne-btn"><svg class="ariadne-dir-icon" viewBox="0 0 24 24"><use href="#icon-radial"/></svg></button>"##.to_string()
 }
 
 fn escape_html(input: &str) -> String {
