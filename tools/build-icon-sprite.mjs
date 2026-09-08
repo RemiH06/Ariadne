@@ -11,6 +11,7 @@ const outFile = path.join(here, "..", "src", "assets", "icons-sprite.svg");
 // encontrar un archivo existente.
 const ICONS = {
   rust: ["rust-original"],
+  elixir: ["elixir-original"],
   typescript: ["typescript-original"],
   javascript: ["javascript-original"],
   python: ["python-original"],

@@ -15,6 +15,7 @@ pub struct Classification {
     pub is_generated: bool,
     pub size_bytes: Option<u64>,
     pub line_count: Option<u32>,
+    pub category: Option<&'static str>,
 }
 
 const GENERATED_DIR_NAMES: &[&str] = &[
@@ -44,6 +45,7 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
             is_generated: path_has_generated_segment(rel_path),
             size_bytes: None,
             line_count: None,
+            category: None,
         };
     }
 
@@ -66,6 +68,8 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
         .ok()
         .map(|f| count_lines_capped(f, LINE_COUNT_CAP));
 
+    let category = file_category(&label, rel_path, extension.as_deref());
+
     Classification {
         node_type: NodeType::File,
         extension,
@@ -74,6 +78,7 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
         is_generated,
         size_bytes,
         line_count,
+        category,
     }
 }
 
@@ -116,6 +121,44 @@ fn path_has_generated_segment(rel_path: &str) -> bool {
         .any(|seg| GENERATED_DIR_NAMES.iter().any(|d| seg.eq_ignore_ascii_case(d)))
 }
 
+/// Rol del archivo para el color del nodo. "test" pisa a cualquier otra
+/// categoría (un archivo puede tener extensión de config y ser un test de
+/// config, por ejemplo, y ahí nos interesa más que es un test).
+fn file_category(filename_lower: &str, rel_path: &str, ext: Option<&str>) -> Option<&'static str> {
+    if is_test_name(filename_lower, rel_path) {
+        return Some("test");
+    }
+    match ext {
+        Some("json") | Some("yaml") | Some("yml") | Some("toml") | Some("ini") | Some("env") => Some("config"),
+        Some("md") | Some("markdown") | Some("txt") | Some("rst") => Some("docs"),
+        Some("css") | Some("scss") | Some("sass") | Some("less") => Some("styles"),
+        Some("html") | Some("htm") => Some("markup"),
+        Some("sh") | Some("bash") | Some("ps1") | Some("bat") | Some("cmd") => Some("script"),
+        _ => None,
+    }
+}
+
+const TEST_DIR_NAMES: &[&str] = &["test", "tests", "__tests__", "spec"];
+
+fn is_test_name(filename_lower: &str, rel_path: &str) -> bool {
+    let stem = filename_lower.rsplit_once('.').map(|(s, _)| s).unwrap_or(filename_lower);
+
+    let stem_marks_test = stem.starts_with("test_")
+        || stem.starts_with("test-")
+        || stem == "test"
+        || stem.ends_with("_test")
+        || stem.ends_with("-test")
+        || stem.ends_with(".test")
+        || stem.ends_with("_spec")
+        || stem.ends_with("-spec")
+        || stem.ends_with(".spec");
+
+    stem_marks_test
+        || rel_path
+            .split('/')
+            .any(|seg| TEST_DIR_NAMES.iter().any(|d| seg.eq_ignore_ascii_case(d)))
+}
+
 /// Mapea extensión -> nombre de ícono Devicon. Deliberadamente no
 /// exhaustivo: es preferible no mostrar ícono a mostrar uno incorrecto.
 fn language_for_extension(ext: &str) -> Option<&'static str> {
@@ -145,6 +188,7 @@ fn language_for_extension(ext: &str) -> Option<&'static str> {
         "lua" => "lua",
         "hs" => "haskell",
         "pl" | "pm" => "perl",
+        "ex" | "exs" => "elixir",
         _ => return None,
     })
 }
@@ -177,5 +221,39 @@ mod tests {
         let content = "line\n".repeat(5000);
         let n = count_lines_capped(Cursor::new(content.as_bytes()), 2000);
         assert_eq!(n, 2000);
+    }
+
+    #[test]
+    fn detects_test_files_by_name() {
+        for name in ["test_utils.py", "user_test.go", "user.test.js", "user.spec.ts"] {
+            assert_eq!(is_test_name(name, name), true, "{name} debería detectarse como test");
+        }
+        assert_eq!(is_test_name("utils.py", "utils.py"), false);
+    }
+
+    #[test]
+    fn detects_test_files_by_directory() {
+        assert!(is_test_name("helpers.py", "src/tests/helpers.py"));
+        assert!(is_test_name("helpers.py", "src/__tests__/helpers.py"));
+        assert!(!is_test_name("helpers.py", "src/helpers.py"));
+    }
+
+    #[test]
+    fn categorizes_files_by_extension() {
+        assert_eq!(file_category("config.json", "config.json", Some("json")), Some("config"));
+        assert_eq!(file_category("readme.md", "readme.md", Some("md")), Some("docs"));
+        assert_eq!(file_category("styles.css", "styles.css", Some("css")), Some("styles"));
+        assert_eq!(file_category("index.html", "index.html", Some("html")), Some("markup"));
+        assert_eq!(file_category("deploy.sh", "deploy.sh", Some("sh")), Some("script"));
+        assert_eq!(file_category("main.rs", "main.rs", Some("rs")), None);
+    }
+
+    #[test]
+    fn test_category_wins_over_extension_category() {
+        // un test en formato .json debería seguir marcándose como test, no config
+        assert_eq!(
+            file_category("config_test.json", "config_test.json", Some("json")),
+            Some("test")
+        );
     }
 }

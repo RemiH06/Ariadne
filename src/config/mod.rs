@@ -129,8 +129,14 @@ impl HtmlConfig {
                 object: "#30b0c7".to_string(),
                 attribute: "#ff2d92".to_string(),
                 method: "#5ac8fa".to_string(),
-                library: "#ff6b35".to_string(),
-                import: "#ff3b30".to_string(),
+                library: "#32ade6".to_string(),
+                import: "#8e8e93".to_string(),
+                test: "#ff3b30".to_string(),
+                config: "#a2845e".to_string(),
+                docs: "#5856d6".to_string(),
+                styles: "#00c7be".to_string(),
+                markup: "#af52de".to_string(),
+                script: "#ffcc00".to_string(),
             },
             icons: IconsConfig::default(),
         }
@@ -164,8 +170,11 @@ impl HtmlConfig {
     }
 }
 
-/// Un color por `NodeType`. `default` es el fallback para cualquier tipo sin
-/// entrada explícita — incluyendo tipos futuros que aún no existen aquí.
+/// Colores por `NodeType` (default/directory/file/...) y por `category` de
+/// archivo (test/config/docs/styles/markup/script). `category` existe
+/// porque el ícono de cada archivo ya identifica el lenguaje — el color
+/// debería aportar algo que el ícono no dice (¿es un test? ¿config?),
+/// en vez de repetir la misma información.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct ColorsConfig {
@@ -178,6 +187,13 @@ pub struct ColorsConfig {
     pub method: String,
     pub library: String,
     pub import: String,
+    // Por categoría de archivo (ver NodeMetadata::category):
+    pub test: String,
+    pub config: String,
+    pub docs: String,
+    pub styles: String,
+    pub markup: String,
+    pub script: String,
 }
 
 impl Default for ColorsConfig {
@@ -190,26 +206,14 @@ impl Default for ColorsConfig {
             object: "#94e2d5".to_string(),
             attribute: "#f5c2e7".to_string(),
             method: "#89dceb".to_string(),
-            library: "#fab387".to_string(),
-            import: "#eba0ac".to_string(),
-        }
-    }
-}
-
-impl ColorsConfig {
-    /// Resuelve el color para un `NodeType` dado (por su nombre snake_case),
-    /// cayendo a `default` si no hay entrada específica.
-    pub fn resolve(&self, node_type: &str) -> &str {
-        match node_type {
-            "directory" => &self.directory,
-            "file" => &self.file,
-            "class" => &self.class,
-            "object" => &self.object,
-            "attribute" => &self.attribute,
-            "method" => &self.method,
-            "library" => &self.library,
-            "import" => &self.import,
-            _ => &self.default,
+            library: "#74c7ec".to_string(),
+            import: "#f5e0dc".to_string(),
+            test: "#f38ba8".to_string(),
+            config: "#a6adc8".to_string(),
+            docs: "#cba6f7".to_string(),
+            styles: "#f2cdcd".to_string(),
+            markup: "#eba0ac".to_string(),
+            script: "#fab387".to_string(),
         }
     }
 }

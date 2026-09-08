@@ -43,6 +43,12 @@ pub struct NodeMetadata {
     pub icon_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// Rol del archivo para el color del nodo — "test", "config", "docs",
+    /// "styles", "markup", "script", o `None` para código fuente genérico.
+    /// Complementa al ícono (que ya identifica el lenguaje): el color
+    /// transmite algo que el ícono no dice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

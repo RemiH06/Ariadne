@@ -16,10 +16,30 @@ const MAX_LABEL_WIDTH = 200; // un solo label larguísimo no debe inflar el espa
 const RADIAL_SEPARATION_SCALE = 2.2; // ajuste empírico para que los anillos internos no se amontonen
 const SUB_LANE_GAP = 16; // separación entre sub-filas dentro de un mismo nivel (menor que LEVEL_GAP)
 const SIBLING_FLOW_GAP = 14; // separación entre cajas consecutivas dentro de una sub-fila
+const BAND_USAGE_FRACTION = 0.97; // % del ancho/alto de pantalla que puede usar cada franja antes de saltar de fila
 
 interface BoxGeom {
   width: number;
   height: number;
+  /** Alto de la pestaña de carpeta (0 si la forma no es "folder") — el
+   * texto/ícono se corren hacia abajo esta distancia/2 para quedar
+   * centrados en el cuerpo, no en la pestaña. */
+  tabHeight: number;
+}
+
+type ShapeKind = "rect" | "folder";
+
+/** root y directory son conceptualmente "contenedores", así que comparten
+ * la silueta de carpeta; el resto (incluyendo los tipos reservados para
+ * cuando exista extracción de clases/atributos/etc.) usa un rectángulo
+ * simple hasta que tengan uso real y sepamos qué forma les conviene. */
+const SHAPE_BY_TYPE: Partial<Record<GraphNode["node_type"], ShapeKind>> = {
+  root: "folder",
+  directory: "folder",
+};
+
+function shapeFor(nodeType: GraphNode["node_type"]): ShapeKind {
+  return SHAPE_BY_TYPE[nodeType] ?? "rect";
 }
 
 interface PositionedNode {
@@ -129,9 +149,12 @@ export class DiagramRenderer {
       const bbox = textEl.getBBox();
       const iconGap = this.hasIcon(node) ? ICON_SIZE + 6 : 0;
       const paddingY = BASE_PADDING_Y + this.extraPaddingFor(node);
+      const bodyHeight = Math.max(MIN_BOX_HEIGHT, bbox.height + paddingY * 2);
+      const tabHeight = shapeFor(node.node_type) === "folder" ? Math.min(bodyHeight * 0.4, 10) : 0;
       geomById.set(node.id, {
         width: PADDING_X * 2 + iconGap + bbox.width,
-        height: Math.max(MIN_BOX_HEIGHT, bbox.height + paddingY * 2),
+        height: bodyHeight + tabHeight,
+        tabHeight,
       });
     });
 
@@ -148,18 +171,31 @@ export class DiagramRenderer {
       return `translate(${p.center.x},${p.center.y})`;
     });
 
-    // Paso 2: la caja, insertada detrás del texto.
-    nodeGroups
-      .insert("rect", "text")
-      .attr("class", "ariadne-node-box")
-      .attr("x", (d) => -geomById.get(this.graphNode(d).id)!.width / 2)
-      .attr("y", (d) => -geomById.get(this.graphNode(d).id)!.height / 2)
-      .attr("width", (d) => geomById.get(this.graphNode(d).id)!.width)
-      .attr("height", (d) => geomById.get(this.graphNode(d).id)!.height)
-      .attr("rx", 6)
-      .attr("fill", (d) => this.colorFor(this.graphNode(d).node_type))
-      .attr("stroke", this.config.html.background)
-      .attr("stroke-width", 1.5);
+    // Paso 2: la forma (rect o carpeta), insertada detrás del texto.
+    nodeGroups.each((d, i, groups) => {
+      const node = this.graphNode(d);
+      const geom = geomById.get(node.id)!;
+      const group = select(groups[i]);
+      let shape: Selection<SVGGraphicsElement, unknown, null, undefined>;
+      if (shapeFor(node.node_type) === "folder") {
+        shape = group
+          .insert("path", "text")
+          .attr("d", folderShapePath(geom.width, geom.height, geom.tabHeight)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+      } else {
+        shape = group
+          .insert("rect", "text")
+          .attr("x", -geom.width / 2)
+          .attr("y", -geom.height / 2)
+          .attr("width", geom.width)
+          .attr("height", geom.height)
+          .attr("rx", 6) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+      }
+      shape
+        .attr("class", "ariadne-node-box")
+        .attr("fill", this.colorFor(node))
+        .attr("stroke", this.config.html.background)
+        .attr("stroke-width", 1.5);
+    });
 
     textSel
       .attr("x", (d) => {
@@ -168,7 +204,8 @@ export class DiagramRenderer {
         const iconGap = this.hasIcon(node) ? ICON_SIZE + 6 : 0;
         return -geom.width / 2 + PADDING_X + iconGap;
       })
-      .attr("fill", (d) => contrastTextColor(this.colorFor(this.graphNode(d).node_type)));
+      .attr("y", (d) => geomById.get(this.graphNode(d).id)!.tabHeight / 2)
+      .attr("fill", (d) => contrastTextColor(this.colorFor(this.graphNode(d))));
 
     nodeGroups
       .filter((d) => this.hasIcon(this.graphNode(d)))
@@ -177,7 +214,7 @@ export class DiagramRenderer {
       .attr("width", ICON_SIZE)
       .attr("height", ICON_SIZE)
       .attr("x", (d) => -geomById.get(this.graphNode(d).id)!.width / 2 + PADDING_X - 2)
-      .attr("y", -ICON_SIZE / 2);
+      .attr("y", (d) => geomById.get(this.graphNode(d).id)!.tabHeight / 2 - ICON_SIZE / 2);
 
     linkLayer
       .selectAll("path")
@@ -215,7 +252,7 @@ export class DiagramRenderer {
     const viewportWidth = svgNode?.clientWidth || 800;
     const viewportHeight = svgNode?.clientHeight || 600;
     const siblingAxisViewportSize = Math.abs(sibVec.x) * viewportWidth + Math.abs(sibVec.y) * viewportHeight;
-    const availableBreadth = Math.max(siblingAxisViewportSize * 0.92, 300);
+    const availableBreadth = Math.max(siblingAxisViewportSize * BAND_USAGE_FRACTION, 300);
 
     // Cada nivel es una franja 2D, no una sola línea: los hermanos de un
     // mismo nivel se acomodan uno tras otro a lo largo del eje "hermanos"
@@ -372,9 +409,15 @@ export class DiagramRenderer {
     return this.config.html.icons.enabled && !!node.metadata.icon_key;
   }
 
-  private colorFor(nodeType: GraphNode["node_type"]): string {
+  /** El ícono de un archivo ya identifica su lenguaje, así que el color
+   * prioriza `category` (test/config/docs/styles/markup/script) — algo que
+   * el ícono no dice — y solo cae al color por `node_type` cuando el
+   * archivo no cae en ninguna categoría reconocida. */
+  private colorFor(node: GraphNode): string {
     const colors = this.config.html.colors as unknown as Record<string, string>;
-    return colors[nodeType] ?? colors.default;
+    const category = node.metadata.category;
+    if (category && colors[category]) return colors[category];
+    return colors[node.node_type] ?? colors.default;
   }
 
   private fitToViewport(positioned: PositionedNode[]): void {
@@ -404,6 +447,28 @@ export class DiagramRenderer {
 
     this.svg.call(this.zoomBehavior.transform, zoomIdentity.translate(tx, ty).scale(scale));
   }
+}
+
+/** Silueta de carpeta (rectángulo con una pestaña arriba a la izquierda),
+ * centrada en el origen como el resto de las formas. `tabHeight` viene del
+ * mismo cálculo que ya infló el `height` del BoxGeom. */
+function folderShapePath(width: number, height: number, tabHeight: number): string {
+  const tabWidth = Math.min(width * 0.4, 40);
+  const left = -width / 2;
+  const right = width / 2;
+  const top = -height / 2;
+  const bottom = height / 2;
+  const bodyTop = top + tabHeight;
+  return [
+    `M ${left} ${bodyTop}`,
+    `L ${left} ${bottom}`,
+    `L ${right} ${bottom}`,
+    `L ${right} ${bodyTop}`,
+    `L ${left + tabWidth + tabHeight} ${bodyTop}`,
+    `L ${left + tabWidth} ${top}`,
+    `L ${left} ${top}`,
+    "Z",
+  ].join(" ");
 }
 
 /** Recorta `label` con "…" hasta que quepa en `maxWidth`, midiendo con

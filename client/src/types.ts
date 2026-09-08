@@ -11,6 +11,8 @@ export type NodeType =
 
 export type EdgeType = "contains" | "depends_on";
 
+export type FileCategory = "test" | "config" | "docs" | "styles" | "markup" | "script";
+
 export interface NodeMetadata {
   extension?: string;
   size_bytes?: number;
@@ -19,6 +21,9 @@ export interface NodeMetadata {
   is_generated?: boolean;
   icon_key?: string;
   language?: string;
+  /** Rol del archivo para el color del nodo — complementa al ícono (que ya
+   * identifica el lenguaje) con algo que el ícono no dice. */
+  category?: FileCategory;
   [key: string]: unknown;
 }
 
@@ -58,6 +63,12 @@ export interface ColorsConfig {
   method: string;
   library: string;
   import: string;
+  test: string;
+  config: string;
+  docs: string;
+  styles: string;
+  markup: string;
+  script: string;
 }
 
 export interface IconsConfig {
