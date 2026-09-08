@@ -188,7 +188,7 @@ impl Default for PandocConfig {
     fn default() -> Self {
         Self {
             binary: "pandoc".to_string(),
-            pdf_engine: "tectonic".to_string(),
+            pdf_engine: "pdflatex".to_string(),
         }
     }
 }

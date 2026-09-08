@@ -10,3 +10,4 @@ node_modules/
 
 # artefactos de prueba manual
 /sample.html
+/docs-out/
