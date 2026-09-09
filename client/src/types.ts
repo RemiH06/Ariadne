@@ -13,6 +13,8 @@ export type EdgeType = "contains" | "depends_on";
 
 export type FileCategory = "test" | "config" | "docs" | "styles" | "markup" | "script";
 
+export type FileShape = "data" | "image" | "text" | "markup";
+
 export interface NodeMetadata {
   extension?: string;
   size_bytes?: number;
@@ -24,6 +26,9 @@ export interface NodeMetadata {
   /** Rol del archivo para el color del nodo — complementa al ícono (que ya
    * identifica el lenguaje) con algo que el ícono no dice. */
   category?: FileCategory;
+  /** Familia visual por formato — decide la FORMA del nodo (círculo por
+   * defecto si no está presente), un eje aparte de `category`/color. */
+  shape?: FileShape;
   [key: string]: unknown;
 }
 

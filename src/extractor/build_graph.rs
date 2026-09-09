@@ -45,6 +45,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                     icon_key: c.icon_key,
                     language: c.language,
                     category: c.category.map(str::to_string),
+                    shape: c.shape.map(str::to_string),
                     extra: Default::default(),
                 },
             }

@@ -16,6 +16,7 @@ pub struct Classification {
     pub size_bytes: Option<u64>,
     pub line_count: Option<u32>,
     pub category: Option<&'static str>,
+    pub shape: Option<&'static str>,
 }
 
 const GENERATED_DIR_NAMES: &[&str] = &[
@@ -46,6 +47,7 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
             size_bytes: None,
             line_count: None,
             category: None,
+            shape: None,
         };
     }
 
@@ -69,6 +71,7 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
         .map(|f| count_lines_capped(f, LINE_COUNT_CAP));
 
     let category = file_category(&label, rel_path, extension.as_deref());
+    let shape = file_shape(extension.as_deref());
 
     Classification {
         node_type: NodeType::File,
@@ -79,6 +82,7 @@ pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification
         size_bytes,
         line_count,
         category,
+        shape,
     }
 }
 
@@ -134,6 +138,23 @@ fn file_category(filename_lower: &str, rel_path: &str, ext: Option<&str>) -> Opt
         Some("css") | Some("scss") | Some("sass") | Some("less") => Some("styles"),
         Some("html") | Some("htm") => Some("markup"),
         Some("sh") | Some("bash") | Some("ps1") | Some("bat") | Some("cmd") => Some("script"),
+        _ => None,
+    }
+}
+
+/// Familia visual por formato — decide la FORMA del nodo en el cliente
+/// (independiente de `category`, que decide el color). `None` (código
+/// fuente genérico y cualquier extensión no reconocida) es un círculo por
+/// defecto en el cliente.
+fn file_shape(ext: Option<&str>) -> Option<&'static str> {
+    match ext {
+        Some("db") | Some("sqlite") | Some("sqlite3") | Some("csv") | Some("tsv") | Some("parquet") | Some("xlsx") | Some("xls") => {
+            Some("data")
+        }
+        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("webp") | Some("bmp") | Some("ico") | Some("tiff")
+        | Some("avif") => Some("image"),
+        Some("txt") | Some("log") | Some("text") => Some("text"),
+        Some("html") | Some("htm") | Some("xml") | Some("md") | Some("markdown") | Some("rst") | Some("adoc") => Some("markup"),
         _ => None,
     }
 }
@@ -248,6 +269,19 @@ mod tests {
         assert_eq!(file_category("index.html", "index.html", Some("html")), Some("markup"));
         assert_eq!(file_category("deploy.sh", "deploy.sh", Some("sh")), Some("script"));
         assert_eq!(file_category("main.rs", "main.rs", Some("rs")), None);
+    }
+
+    #[test]
+    fn classifies_shape_by_format_family() {
+        assert_eq!(file_shape(Some("csv")), Some("data"));
+        assert_eq!(file_shape(Some("parquet")), Some("data"));
+        assert_eq!(file_shape(Some("png")), Some("image"));
+        assert_eq!(file_shape(Some("svg")), Some("image"));
+        assert_eq!(file_shape(Some("txt")), Some("text"));
+        assert_eq!(file_shape(Some("md")), Some("markup"));
+        assert_eq!(file_shape(Some("html")), Some("markup"));
+        assert_eq!(file_shape(Some("rs")), None);
+        assert_eq!(file_shape(None), None);
     }
 
     #[test]

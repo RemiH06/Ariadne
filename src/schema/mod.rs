@@ -49,6 +49,12 @@ pub struct NodeMetadata {
     /// transmite algo que el ícono no dice.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    /// Familia visual del archivo por formato — "data", "image", "text",
+    /// "markup", o `None` para código fuente genérico. Es un eje aparte de
+    /// `category`: decide la FORMA del nodo en el cliente (círculo por
+    /// defecto, rombo para datos, etc.), no su color.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

@@ -18,6 +18,24 @@ const RADIAL_SEPARATION_SCALE = 2.2; // ajuste empírico para que los anillos in
 const SUB_LANE_GAP = 16; // separación entre sub-filas dentro de un mismo nivel (menor que LEVEL_GAP)
 const SIBLING_FLOW_GAP = 14; // separación entre cajas consecutivas dentro de una sub-fila
 const BAND_USAGE_FRACTION = 0.97; // % del ancho/alto de pantalla que puede usar cada franja antes de saltar de fila
+const CENTERED_INNER_PAD_X = 10;
+const CENTERED_INNER_PAD_Y = 8;
+const ICON_TEXT_GAP = 4; // separación ícono/texto en el layout centrado (vertical, no el de fila)
+const SHAPE_SIZE_GROWTH = 0.7; // crecimiento máximo (fracción) por tamaño de archivo, en figuras centradas
+
+/** Cuánto más grande que el bloque de contenido (ícono+texto) tiene que ser
+ * cada figura para contenerlo con margen razonable — un rombo/triángulo
+ * necesita mucho más margen que un octágono (casi un rectángulo) porque
+ * desperdician más área cerca de sus puntas. Ajustado a ojo, no es
+ * geometría exacta: son insignias de diagrama, no tipografía de precisión. */
+const SHAPE_INFLATION: Record<string, { w: number; h: number }> = {
+  circle: { w: 1.5, h: 1.5 },
+  hexagon: { w: 1.3, h: 1.3 },
+  diamond: { w: 2.0, h: 2.0 },
+  triangle: { w: 2.3, h: 2.7 },
+  pentagon: { w: 1.55, h: 1.6 },
+  octagon: { w: 1.3, h: 1.3 },
+};
 
 interface BoxGeom {
   width: number;
@@ -26,21 +44,53 @@ interface BoxGeom {
    * texto/ícono se corren hacia abajo esta distancia/2 para quedar
    * centrados en el cuerpo, no en la pestaña. */
   tabHeight: number;
+  /** Alto del bloque ícono+texto sin inflar por la forma (0 para "rect"/
+   * "folder", que no lo usan) — sirve para centrar ese bloque dentro de las
+   * formas "centradas" (círculo, hexágono, rombo, etc.). */
+  contentHeight: number;
 }
 
-type ShapeKind = "rect" | "folder";
+type ShapeKind = "rect" | "folder" | "circle" | "hexagon" | "diamond" | "triangle" | "pentagon" | "octagon";
 
 /** root y directory son conceptualmente "contenedores", así que comparten
- * la silueta de carpeta; el resto (incluyendo los tipos reservados para
- * cuando exista extracción de clases/atributos/etc.) usa un rectángulo
- * simple hasta que tengan uso real y sepamos qué forma les conviene. */
-const SHAPE_BY_TYPE: Partial<Record<GraphNode["node_type"], ShapeKind>> = {
+ * la silueta de carpeta; library (dependencia externa, no viene del disco)
+ * y los tipos reservados sin uso real todavía (object/attribute/method)
+ * usan un rectángulo simple; class (reservado) ya tiene forma asignada
+ * (hexágono) aunque todavía no se emitan nodos de ese tipo. */
+const NODE_TYPE_SHAPE: Partial<Record<GraphNode["node_type"], ShapeKind>> = {
   root: "folder",
   directory: "folder",
+  library: "rect",
+  class: "hexagon",
 };
 
-function shapeFor(nodeType: GraphNode["node_type"]): ShapeKind {
-  return SHAPE_BY_TYPE[nodeType] ?? "rect";
+/** Para archivos: la familia visual por formato (`metadata.shape`, ver
+ * extractor::classify::file_shape en Rust) decide la forma; sin ella, un
+ * archivo es un círculo por defecto — distinto del rectángulo de carpetas/
+ * librerías, para diferenciar visualmente archivos del mismo color. */
+const FILE_SHAPE_BY_METADATA: Record<string, ShapeKind> = {
+  data: "diamond",
+  image: "triangle",
+  text: "pentagon",
+  markup: "octagon",
+};
+
+function shapeFor(node: GraphNode): ShapeKind {
+  const byType = NODE_TYPE_SHAPE[node.node_type];
+  if (byType) return byType;
+  if (node.node_type === "file") {
+    const metaShape = node.metadata.shape;
+    return (metaShape && FILE_SHAPE_BY_METADATA[metaShape]) || "circle";
+  }
+  return "rect";
+}
+
+/** "rect"/"folder" usan el layout de fila (ícono a la izquierda, texto a la
+ * derecha, todo alineado a la izquierda de la caja) — el resto usa un
+ * layout centrado (ícono arriba, texto abajo, todo centrado) porque una
+ * fila angosta no se ve bien inscrita en un círculo/hexágono/rombo/etc. */
+function isRowShape(kind: ShapeKind): boolean {
+  return kind === "rect" || kind === "folder";
 }
 
 interface PositionedNode {
@@ -177,14 +227,38 @@ export class DiagramRenderer {
       const node = this.graphNode(d);
       const textEl = groups[i] as SVGTextElement;
       const bbox = textEl.getBBox();
-      const iconGap = this.hasIcon(node) ? ICON_SIZE + 6 : 0;
-      const paddingY = BASE_PADDING_Y + this.extraPaddingFor(node);
-      const bodyHeight = Math.max(MIN_BOX_HEIGHT, bbox.height + paddingY * 2);
-      const tabHeight = shapeFor(node.node_type) === "folder" ? Math.min(bodyHeight * 0.4, 10) : 0;
+      const kind = shapeFor(node);
+      const hasIcon = this.hasIcon(node);
+
+      if (isRowShape(kind)) {
+        const iconGap = hasIcon ? ICON_SIZE + 6 : 0;
+        const paddingY = BASE_PADDING_Y + this.extraPaddingFor(node);
+        const bodyHeight = Math.max(MIN_BOX_HEIGHT, bbox.height + paddingY * 2);
+        const tabHeight = kind === "folder" ? Math.min(bodyHeight * 0.4, 10) : 0;
+        geomById.set(node.id, {
+          width: PADDING_X * 2 + iconGap + bbox.width,
+          height: bodyHeight + tabHeight,
+          tabHeight,
+          contentHeight: 0,
+        });
+        return;
+      }
+
+      // Figuras centradas: ícono arriba, texto abajo, todo centrado, con el
+      // tamaño creciendo con el conteo de líneas del archivo (hasta el tope)
+      // para que la diferencia de tamaño entre archivos sea visualmente
+      // obvia, no solo un padding sutil.
+      const contentWidth = Math.max(bbox.width, hasIcon ? ICON_SIZE : 0);
+      const contentHeight = bbox.height + (hasIcon ? ICON_SIZE + ICON_TEXT_GAP : 0);
+      const baseWidth = contentWidth + CENTERED_INNER_PAD_X * 2;
+      const baseHeight = Math.max(MIN_BOX_HEIGHT, contentHeight + CENTERED_INNER_PAD_Y * 2);
+      const growth = 1 + this.sizeScaleT(node) * SHAPE_SIZE_GROWTH;
+      const inflation = SHAPE_INFLATION[kind];
       geomById.set(node.id, {
-        width: PADDING_X * 2 + iconGap + bbox.width,
-        height: bodyHeight + tabHeight,
-        tabHeight,
+        width: baseWidth * growth * inflation.w,
+        height: baseHeight * growth * inflation.h,
+        tabHeight: 0,
+        contentHeight,
       });
     });
 
@@ -201,17 +275,19 @@ export class DiagramRenderer {
       return `translate(${p.center.x},${p.center.y})`;
     });
 
-    // Paso 2: la forma (rect o carpeta), insertada detrás del texto.
+    // Paso 2: la forma (carpeta, rect, o una figura centrada), insertada
+    // detrás del texto.
     nodeGroups.each((d, i, groups) => {
       const node = this.graphNode(d);
       const geom = geomById.get(node.id)!;
       const group = select(groups[i]);
+      const kind = shapeFor(node);
       let shape: Selection<SVGGraphicsElement, unknown, null, undefined>;
-      if (shapeFor(node.node_type) === "folder") {
+      if (kind === "folder") {
         shape = group
           .insert("path", "text")
           .attr("d", folderShapePath(geom.width, geom.height, geom.tabHeight)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
-      } else {
+      } else if (kind === "rect") {
         shape = group
           .insert("rect", "text")
           .attr("x", -geom.width / 2)
@@ -219,6 +295,15 @@ export class DiagramRenderer {
           .attr("width", geom.width)
           .attr("height", geom.height)
           .attr("rx", 6) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+      } else if (kind === "circle") {
+        shape = group
+          .insert("ellipse", "text")
+          .attr("rx", geom.width / 2)
+          .attr("ry", geom.height / 2) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+      } else {
+        shape = group
+          .insert("polygon", "text")
+          .attr("points", polygonPoints(kind, geom.width, geom.height)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
       }
       shape
         .attr("class", "ariadne-node-box")
@@ -231,10 +316,25 @@ export class DiagramRenderer {
       .attr("x", (d) => {
         const node = this.graphNode(d);
         const geom = geomById.get(node.id)!;
+        const kind = shapeFor(node);
+        if (!isRowShape(kind)) return 0;
         const iconGap = this.hasIcon(node) ? ICON_SIZE + 6 : 0;
         return -geom.width / 2 + PADDING_X + iconGap;
       })
-      .attr("y", (d) => geomById.get(this.graphNode(d).id)!.tabHeight / 2)
+      .attr("text-anchor", (d) => (isRowShape(shapeFor(this.graphNode(d))) ? "start" : "middle"))
+      .attr("y", (d) => {
+        const node = this.graphNode(d);
+        const geom = geomById.get(node.id)!;
+        if (isRowShape(shapeFor(node))) return geom.tabHeight / 2;
+        // Centrada: el bloque ícono+texto (contentHeight) va centrado en el
+        // origen; el texto ocupa la parte de abajo del bloque, debajo del
+        // ícono si lo hay.
+        const top = -geom.contentHeight / 2;
+        const iconBlock = this.hasIcon(node) ? ICON_SIZE + ICON_TEXT_GAP : 0;
+        const textTop = top + iconBlock;
+        const textHeight = geom.contentHeight - iconBlock;
+        return textTop + textHeight / 2;
+      })
       .attr("fill", (d) => contrastTextColor(this.colorFor(this.graphNode(d))));
 
     nodeGroups
@@ -243,8 +343,18 @@ export class DiagramRenderer {
       .attr("href", (d) => `#icon-${this.graphNode(d).metadata.icon_key}`)
       .attr("width", ICON_SIZE)
       .attr("height", ICON_SIZE)
-      .attr("x", (d) => -geomById.get(this.graphNode(d).id)!.width / 2 + PADDING_X - 2)
-      .attr("y", (d) => geomById.get(this.graphNode(d).id)!.tabHeight / 2 - ICON_SIZE / 2);
+      .attr("x", (d) => {
+        const node = this.graphNode(d);
+        const kind = shapeFor(node);
+        if (isRowShape(kind)) return -geomById.get(node.id)!.width / 2 + PADDING_X - 2;
+        return -ICON_SIZE / 2;
+      })
+      .attr("y", (d) => {
+        const node = this.graphNode(d);
+        const geom = geomById.get(node.id)!;
+        if (isRowShape(shapeFor(node))) return geom.tabHeight / 2 - ICON_SIZE / 2;
+        return -geom.contentHeight / 2;
+      });
 
     linkLayer
       .selectAll("path")
@@ -476,15 +586,23 @@ export class DiagramRenderer {
     return Boolean(d.data.children) || (d.data.children === undefined && Boolean(this.graphNode(d).metadata.child_count));
   }
 
-  /** Padding vertical extra para archivos, proporcional al área (raíz
-   * cuadrada del conteo de líneas) — así la caja "se siente" más grande
-   * cuanto más código tiene el archivo, sin dejar de contener el texto. */
-  private extraPaddingFor(node: GraphNode): number {
+  /** Qué tan "grande" es un archivo, en [0, 1] — raíz cuadrada del conteo de
+   * líneas (con tope), para que el crecimiento visual sea proporcional al
+   * ÁREA del archivo y no a su conteo de líneas directamente. Usado tanto
+   * para el padding extra de cajas rectangulares como el crecimiento de
+   * tamaño de las figuras centradas. */
+  private sizeScaleT(node: GraphNode): number {
     if (node.node_type !== "file") return 0;
     const lines = node.metadata.line_count;
     if (!lines || lines <= 0) return 0;
-    const t = Math.sqrt(Math.min(lines, LINE_COUNT_CAP) / LINE_COUNT_CAP);
-    return t * MAX_EXTRA_PADDING_Y;
+    return Math.sqrt(Math.min(lines, LINE_COUNT_CAP) / LINE_COUNT_CAP);
+  }
+
+  /** Padding vertical extra para cajas rectangulares — así la caja "se
+   * siente" más grande cuanto más código tiene el archivo, sin dejar de
+   * contener el texto. */
+  private extraPaddingFor(node: GraphNode): number {
+    return this.sizeScaleT(node) * MAX_EXTRA_PADDING_Y;
   }
 
   private hasIcon(node: GraphNode): boolean {
@@ -566,6 +684,80 @@ function folderShapePath(width: number, height: number, tabHeight: number): stri
     `L ${left} ${top}`,
     "Z",
   ].join(" ");
+}
+
+/** Puntos (para un `<polygon>`) de una figura centrada en el origen que
+ * ocupa el `width`x`height` dado — hexágono (achatado arriba/abajo, puntas
+ * a los lados), rombo, triángulo (apunta arriba), pentágono ("home plate",
+ * punta arriba) y octágono (esquinas cortadas, el más parecido a un rect).
+ * No son polígonos regulares: están ajustados para dejar espacio razonable
+ * al contenido centrado (ícono+texto) que llevan encima, no para precisión
+ * geométrica. */
+function polygonPoints(kind: ShapeKind, width: number, height: number): string {
+  const hw = width / 2;
+  const hh = height / 2;
+  let pts: Array<[number, number]>;
+  switch (kind) {
+    case "hexagon": {
+      const cut = hw * 0.5;
+      pts = [
+        [-hw + cut, -hh],
+        [hw - cut, -hh],
+        [hw, 0],
+        [hw - cut, hh],
+        [-hw + cut, hh],
+        [-hw, 0],
+      ];
+      break;
+    }
+    case "diamond":
+      pts = [
+        [0, -hh],
+        [hw, 0],
+        [0, hh],
+        [-hw, 0],
+      ];
+      break;
+    case "triangle":
+      pts = [
+        [0, -hh],
+        [hw, hh],
+        [-hw, hh],
+      ];
+      break;
+    case "pentagon":
+      pts = [
+        [0, -hh],
+        [hw, -hh * 0.3],
+        [hw * 0.7, hh],
+        [-hw * 0.7, hh],
+        [-hw, -hh * 0.3],
+      ];
+      break;
+    case "octagon": {
+      const cutX = hw * 0.58;
+      const cutY = hh * 0.58;
+      pts = [
+        [-hw + cutX, -hh],
+        [hw - cutX, -hh],
+        [hw, -hh + cutY],
+        [hw, hh - cutY],
+        [hw - cutX, hh],
+        [-hw + cutX, hh],
+        [-hw, hh - cutY],
+        [-hw, -hh + cutY],
+      ];
+      break;
+    }
+    default:
+      pts = [
+        [-hw, -hh],
+        [hw, -hh],
+        [hw, hh],
+        [-hw, hh],
+      ];
+  }
+  return pts.map(([x, y]) => `${x},${y}`).join(" ");
 }
 
 /** Recorta `label` con "…" hasta que quepa en `maxWidth`, midiendo con
