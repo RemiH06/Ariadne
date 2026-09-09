@@ -1,5 +1,6 @@
 mod build_graph;
 mod classify;
+mod imports;
 mod manifests;
 mod walk;
 

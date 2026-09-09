@@ -1,4 +1,4 @@
-import { buildFilteredTree, readEmbeddedJson, type FilterState } from "./data.js";
+import { buildFilteredTree, collectVisibleIds, getVisibleReferenceEdges, readEmbeddedJson, type FilterState } from "./data.js";
 import { initFilterControls } from "./filters-ui.js";
 import { LAYOUT_MODES, type LayoutMode } from "./layout.js";
 import { DiagramRenderer } from "./render.js";
@@ -30,7 +30,9 @@ function main(): void {
   function rerender(): void {
     const filteredTree = buildFilteredTree(graph, filterState, collapsed);
     if (!filteredTree) return;
-    renderer.render(filteredTree, { refit: !hasRenderedOnce });
+    const visibleIds = collectVisibleIds(filteredTree);
+    const refEdges = getVisibleReferenceEdges(graph, visibleIds);
+    renderer.render(filteredTree, refEdges, { refit: !hasRenderedOnce });
     hasRenderedOnce = true;
   }
 
@@ -55,6 +57,11 @@ function main(): void {
 
   const fitButton = document.getElementById("ariadne-fit-btn");
   fitButton?.addEventListener("click", () => renderer.fit());
+
+  const showRefsInput = document.getElementById("ariadne-filter-show-refs") as HTMLInputElement | null;
+  showRefsInput?.addEventListener("change", () => {
+    renderer.setShowReferences(showRefsInput.checked);
+  });
 
   const directionButtons = document.querySelectorAll<HTMLButtonElement>("[data-direction]");
   const setActiveDirectionButton = (direction: LayoutMode) => {

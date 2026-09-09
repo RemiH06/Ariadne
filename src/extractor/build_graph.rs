@@ -1,12 +1,13 @@
 use crate::config::IgnoreConfig;
 use crate::extractor::classify::classify;
+use crate::extractor::imports::{extract_imports, resolve_relative_import};
 use crate::extractor::manifests::{is_manifest_file, parse_manifest};
 use crate::extractor::walk::walk;
 use crate::schema::{EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
 use anyhow::Result;
 use chrono::Utc;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -> Result<Graph> {
@@ -113,7 +114,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         }
     }
 
-    let edges: Vec<GraphEdge> = nodes
+    let mut edges: Vec<GraphEdge> = nodes
         .iter()
         .filter_map(|n| {
             n.parent_id.as_ref().map(|parent| GraphEdge {
@@ -124,6 +125,48 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
             })
         })
         .collect();
+
+    // Referencias entre archivos (imports): heurística de texto + resolución
+    // de imports *relativos* únicamente (ver extractor::imports). Un import
+    // absoluto/de paquete (`crate::foo`, `import myapp.utils`) necesitaría
+    // conocer el layout de resolución de módulos del proyecto y queda fuera
+    // de alcance por ahora.
+    let known_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+    let abs_path_by_id: HashMap<&str, &Path> = entries
+        .iter()
+        .map(|e| (e.rel_path.as_str(), e.abs_path.as_path()))
+        .collect();
+    let mut seen_import_edges: HashSet<(String, String)> = HashSet::new();
+
+    for node in &nodes {
+        let Some(lang) = node.metadata.language.as_deref() else {
+            continue;
+        };
+        if !matches!(lang, "javascript" | "typescript" | "python") {
+            continue;
+        }
+        let Some(&abs_path) = abs_path_by_id.get(node.id.as_str()) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(abs_path) else {
+            continue;
+        };
+
+        for import_ref in extract_imports(lang, &content) {
+            let Some(target) = resolve_relative_import(&node.id, &import_ref.specifier, lang, &known_ids) else {
+                continue;
+            };
+            if target == node.id || !seen_import_edges.insert((node.id.clone(), target.clone())) {
+                continue;
+            }
+            edges.push(GraphEdge {
+                id: format!("{}=>{}", node.id, target),
+                edge_type: EdgeType::DependsOn,
+                source: node.id.clone(),
+                target,
+            });
+        }
+    }
 
     let source_path = root
         .file_name()

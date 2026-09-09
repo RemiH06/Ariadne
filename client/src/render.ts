@@ -2,6 +2,7 @@ import { hierarchy, tree, type HierarchyNode, type HierarchyPointNode } from "d3
 import { select, type Selection } from "d3-selection";
 import { linkRadial } from "d3-shape";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
+import type { RefEdge } from "./data.js";
 import { DIRECTION_VECTORS, type LayoutMode, type Vec2 } from "./layout.js";
 import type { GraphNode, RenderConfig, TreeNode } from "./types.js";
 
@@ -63,6 +64,8 @@ export class DiagramRenderer {
   private readonly zoomBehavior = zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 8]);
   private direction: LayoutMode = "left-right";
   private lastTree: TreeNode | null = null;
+  private lastRefEdges: RefEdge[] = [];
+  private showReferences = false;
 
   constructor(svgEl: SVGSVGElement, config: RenderConfig, callbacks: RenderCallbacks) {
     this.svg = select(svgEl);
@@ -79,7 +82,7 @@ export class DiagramRenderer {
 
   setDirection(direction: LayoutMode): void {
     this.direction = direction;
-    if (this.lastTree) this.render(this.lastTree, { refit: true });
+    if (this.lastTree) this.render(this.lastTree, this.lastRefEdges, { refit: true });
   }
 
   getDirection(): LayoutMode {
@@ -89,11 +92,17 @@ export class DiagramRenderer {
   /** Reajusta el zoom/pan para que todo el diagrama entre en pantalla, sin
    * tocar el árbol ni la orientación actual. */
   fit(): void {
-    if (this.lastTree) this.render(this.lastTree, { refit: true });
+    if (this.lastTree) this.render(this.lastTree, this.lastRefEdges, { refit: true });
   }
 
-  render(rootTree: TreeNode, opts: { refit?: boolean } = {}): void {
+  setShowReferences(show: boolean): void {
+    this.showReferences = show;
+    if (this.lastTree) this.render(this.lastTree, this.lastRefEdges);
+  }
+
+  render(rootTree: TreeNode, refEdges: RefEdge[] = [], opts: { refit?: boolean } = {}): void {
     this.lastTree = rootTree;
+    this.lastRefEdges = refEdges;
 
     const rootHierarchy = hierarchy<TreeNode>(rootTree, (d) => d.children);
     // Estructura (sin x/y todavía) para la pasada de medición: el espaciado
@@ -221,6 +230,33 @@ export class DiagramRenderer {
       .data(links)
       .join("path")
       .attr("d", (link) => pathFor(link));
+
+    if (this.showReferences && refEdges.length > 0) {
+      const refLayer = this.viewport
+        .insert("g", ".ariadne-nodes")
+        .attr("class", "ariadne-ref-links")
+        .attr("fill", "none")
+        .attr("stroke", this.config.html.colors.default)
+        .attr("stroke-width", 1.3)
+        .attr("stroke-dasharray", "5 3")
+        .attr("opacity", 0.65);
+
+      refLayer
+        .selectAll("path")
+        .data(refEdges)
+        .join("path")
+        .attr("d", (edge) => {
+          const source = positionById.get(edge.source);
+          const target = positionById.get(edge.target);
+          if (!source || !target) return "";
+          const dir = normalizeVec({ x: target.center.x - source.center.x, y: target.center.y - source.center.y });
+          const exitDist = boxExitDistance(source.geom, dir);
+          const entryDist = boxExitDistance(target.geom, dir);
+          const exit: Vec2 = { x: source.center.x + dir.x * exitDist, y: source.center.y + dir.y * exitDist };
+          const entry: Vec2 = { x: target.center.x - dir.x * entryDist, y: target.center.y - dir.y * entryDist };
+          return `M${exit.x},${exit.y} L${entry.x},${entry.y}`;
+        });
+    }
 
     if (opts.refit) {
       this.fitToViewport(positioned);
@@ -490,6 +526,14 @@ function truncateToWidth(textEl: SVGTextElement, label: string, maxWidth: number
   }
   textEl.textContent = label.slice(0, lo) + "…";
   return true;
+}
+
+/** Vector unitario en la dirección de `v`; si `v` es (0,0) (dos nodos con el
+ * mismo centro, caso degenerado raro) cae a apuntar a la derecha. */
+function normalizeVec(v: Vec2): Vec2 {
+  const len = Math.hypot(v.x, v.y);
+  if (len === 0) return { x: 1, y: 0 };
+  return { x: v.x / len, y: v.y / len };
 }
 
 /** Distancia desde el centro de una caja axis-aligned hasta el punto donde

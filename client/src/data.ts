@@ -1,5 +1,10 @@
 import type { Graph, GraphNode, TreeNode } from "./types.js";
 
+export interface RefEdge {
+  source: string;
+  target: string;
+}
+
 export interface FilterState {
   hideGenerated: boolean;
   maxDepth: number | null;
@@ -64,6 +69,33 @@ export function buildFilteredTree(
   };
 
   return toTreeNode(rootNode);
+}
+
+/** ids de todos los nodos que quedaron visibles en el árbol ya filtrado y
+ * con colapsos aplicados — un nodo colapsado sigue visible, sus
+ * descendientes no (nunca se agregaron a `children`). */
+export function collectVisibleIds(tree: TreeNode): Set<string> {
+  const ids = new Set<string>();
+  const walk = (node: TreeNode) => {
+    ids.add(node.data.id);
+    node.children?.forEach(walk);
+  };
+  walk(tree);
+  return ids;
+}
+
+/** Aristas "depends_on" (referencias entre archivos) cuyos dos extremos
+ * siguen visibles — evita dibujar líneas hacia nodos ocultos por un
+ * filtro o un colapso manual. */
+export function getVisibleReferenceEdges(graph: Graph, visibleIds: ReadonlySet<string>): RefEdge[] {
+  const edges: RefEdge[] = [];
+  for (const edge of graph.edges) {
+    if (edge.edge_type !== "depends_on") continue;
+    if (visibleIds.has(edge.source) && visibleIds.has(edge.target)) {
+      edges.push({ source: edge.source, target: edge.target });
+    }
+  }
+  return edges;
 }
 
 export function readEmbeddedJson<T>(elementId: string): T {

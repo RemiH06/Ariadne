@@ -210,6 +210,7 @@ pub fn render(input: TemplateInput) -> String {
       <label><input type="checkbox" id="ariadne-filter-hide-generated" /> Ocultar generados</label>
       <label>Profundidad máx. <input type="number" id="ariadne-filter-max-depth" min="0" /> <span style="opacity:.65">(total: <strong id="ariadne-depth-indicator">–</strong>)</span></label>
       <label>Ocultar extensiones <input type="text" id="ariadne-filter-hide-ext" placeholder=".lock,.min.js" /></label>
+      <label><input type="checkbox" id="ariadne-filter-show-refs" /> Mostrar referencias entre archivos</label>
     </div>
   </div>
 </div>
