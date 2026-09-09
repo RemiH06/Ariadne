@@ -19,7 +19,6 @@ const FONT_SIZE = 13 * NODE_SCALE;
 const RADIAL_SEPARATION_SCALE = 2.2; // ajuste empírico para que los anillos internos no se amontonen
 const SUB_LANE_GAP = 16; // separación entre sub-filas dentro de un mismo nivel (menor que LEVEL_GAP)
 const SIBLING_FLOW_GAP = 14; // separación entre cajas consecutivas dentro de una sub-fila
-const BAND_USAGE_FRACTION = 0.97; // % del ancho/alto de pantalla que puede usar cada franja antes de saltar de fila
 const CENTERED_INNER_PAD_Y = 8 * NODE_SCALE;
 const ICON_TEXT_GAP = 4 * NODE_SCALE; // separación ícono/texto en el layout centrado (vertical, no el de fila)
 const SHAPE_SIZE_GROWTH = 0.7; // crecimiento máximo (fracción) por tamaño de archivo, en figuras centradas
@@ -44,6 +43,13 @@ interface BoxGeom {
    * tiene por qué medir exactamente 2*radio de alto (p. ej. un triángulo
    * mide 1.5*radio), y hay que volver a generar los mismos puntos al dibujar. */
   radius: number;
+}
+
+/** Posición de un nodo dentro del flow-wrap de un nivel: en qué sub-fila
+ * cayó y dónde queda su centro a lo largo del eje "hermanos". */
+interface FlowPos {
+  row: number;
+  breadthCenter: number;
 }
 
 type ShapeKind = "book" | "folder" | "circle" | "hexagon" | "diamond" | "triangle" | "pentagon" | "octagon";
@@ -485,34 +491,6 @@ export class DiagramRenderer {
     const { depth: depthVec, sibling: sibVec } = vectors;
     const allNodes = rootHierarchy.descendants(); // pre-order: mantiene hermanos/parientes agrupados
 
-    // Grosor de una sub-fila: proyección de la caja sobre el eje de
-    // profundidad (igual que antes), usado para separar los niveles Y las
-    // sub-filas dentro de un mismo nivel.
-    let maxDepthHalfExtent = MIN_BOX_HEIGHT / 2;
-    for (const geom of geomById.values()) {
-      const halfW = geom.width / 2;
-      const halfH = geom.height / 2;
-      maxDepthHalfExtent = Math.max(maxDepthHalfExtent, halfW * Math.abs(depthVec.x) + halfH * Math.abs(depthVec.y));
-    }
-    const subLaneThickness = maxDepthHalfExtent * 2 + SUB_LANE_GAP;
-
-    const svgNode = this.svg.node();
-    const viewportWidth = svgNode?.clientWidth || 800;
-    const viewportHeight = svgNode?.clientHeight || 600;
-    const siblingAxisViewportSize = Math.abs(sibVec.x) * viewportWidth + Math.abs(sibVec.y) * viewportHeight;
-    const availableBreadth = Math.max(siblingAxisViewportSize * BAND_USAGE_FRACTION, 300);
-
-    // Cada nivel es una franja 2D, no una sola línea: los hermanos de un
-    // mismo nivel se acomodan uno tras otro a lo largo del eje "hermanos"
-    // (usando el 100% del ancho/alto disponible) y saltan a una sub-fila
-    // nueva cuando no caben más — como un texto que hace salto de línea.
-    // Así varios nodos del mismo nivel terminan en "alturas" (posiciones de
-    // profundidad) distintas sin dejar de pertenecer al mismo nivel, y un
-    // nivel con muchos hermanos deja de estirarse como una sola línea larga.
-    interface FlowPos {
-      row: number;
-      breadthCenter: number;
-    }
     const byDepth = new Map<number, HierarchyNode<TreeNode>[]>();
     let maxDepth = 0;
     for (const n of allNodes) {
@@ -521,42 +499,65 @@ export class DiagramRenderer {
       if (n.depth > maxDepth) maxDepth = n.depth;
     }
 
-    const flowById = new Map<string, FlowPos>();
-    const rowsUsedAtDepth = new Map<number, number>();
-    for (const [depth, group] of byDepth) {
-      let row = 0;
-      let cursor = 0;
+    // Ancho disponible para el "salto de línea" de hermanos: en vez de un
+    // porcentaje fijo del viewport, se busca por bisección el valor que
+    // deja la profundidad total y el ancho total lo más parecidos posible
+    // (ajustados a la proporción del viewport) — un árbol con muchos
+    // niveles y pocos hermanos por nivel terminaba MUY alto y angosto (o
+    // muy ancho y bajo) sin importar qué tan bien se acomodaran los huecos
+    // internos entre sub-filas. Ver conversación 2026-09-09 (captura de un
+    // top-bottom saliendo como una columna larga y delgada).
+    const svgNode = this.svg.node();
+    const viewportWidth = svgNode?.clientWidth || 800;
+    const viewportHeight = svgNode?.clientHeight || 600;
+    // Para direcciones diagonales el ancho de pantalla resultante es
+    // cuadrado sin importar la proporción profundidad:ancho elegida (ambos
+    // ejes pesan igual en X y en Y), así que ahí el objetivo es 1:1; para
+    // las 4 cardinales si se busca que coincida con la proporción real del
+    // viewport.
+    const isDiagonal = Math.abs(Math.abs(depthVec.x) - Math.abs(depthVec.y)) < 1e-6;
+    const targetDepthToBreadthRatio = isDiagonal
+      ? 1
+      : Math.abs(depthVec.x) > Math.abs(depthVec.y)
+        ? viewportWidth / viewportHeight
+        : viewportHeight / viewportWidth;
+
+    let minBreadth = MIN_BOX_HEIGHT;
+    let maxBreadth = MIN_BOX_HEIGHT;
+    for (const group of byDepth.values()) {
+      let levelTotal = 0;
       for (const n of group) {
         const geom = geomById.get(this.graphNode(n).id)!;
-        const halfW = geom.width / 2;
-        const halfH = geom.height / 2;
-        const breadthExtent = halfW * Math.abs(sibVec.x) + halfH * Math.abs(sibVec.y);
-        const size = breadthExtent * 2 + SIBLING_FLOW_GAP;
-        if (cursor > 0 && cursor + size > availableBreadth) {
-          row += 1;
-          cursor = 0;
-        }
-        flowById.set(this.graphNode(n).id, { row, breadthCenter: cursor + breadthExtent });
-        cursor += size;
+        const bExtent = (geom.width / 2) * Math.abs(sibVec.x) + (geom.height / 2) * Math.abs(sibVec.y);
+        const size = bExtent * 2 + SIBLING_FLOW_GAP;
+        minBreadth = Math.max(minBreadth, size);
+        levelTotal += size;
       }
-      rowsUsedAtDepth.set(depth, row + 1);
+      maxBreadth = Math.max(maxBreadth, levelTotal);
     }
 
-    // Posición base (eje de profundidad) de cada nivel: acumula el grosor
-    // total (todas sus sub-filas) del nivel anterior más el espacio normal
-    // entre niveles, para que un nivel con varias sub-filas no se encime
-    // con el siguiente.
-    const levelBaseDepthPos = new Map<number, number>([[0, 0]]);
-    for (let d = 1; d <= maxDepth; d++) {
-      const prevBase = levelBaseDepthPos.get(d - 1)!;
-      const prevRows = rowsUsedAtDepth.get(d - 1) ?? 1;
-      levelBaseDepthPos.set(d, prevBase + prevRows * subLaneThickness + LEVEL_GAP);
+    let bestBreadth = maxBreadth;
+    if (maxBreadth > minBreadth) {
+      let lo = minBreadth;
+      let hi = maxBreadth;
+      for (let i = 0; i < 18; i++) {
+        const mid = (lo + hi) / 2;
+        const { depthExtent, breadthExtent } = this.computeFlow(byDepth, allNodes, maxDepth, geomById, depthVec, sibVec, mid);
+        if (depthExtent > breadthExtent * targetDepthToBreadthRatio) {
+          lo = mid; // hace falta más ancho para achicar la profundidad
+        } else {
+          hi = mid;
+        }
+      }
+      bestBreadth = (lo + hi) / 2;
     }
+
+    const { flowById, rowDepthPos } = this.computeFlow(byDepth, allNodes, maxDepth, geomById, depthVec, sibVec, bestBreadth);
 
     const positioned: PositionedNode[] = allNodes.map((hnode) => {
       const geom = geomById.get(this.graphNode(hnode).id)!;
       const flow = flowById.get(this.graphNode(hnode).id)!;
-      const depthPos = levelBaseDepthPos.get(hnode.depth)! + flow.row * subLaneThickness;
+      const depthPos = rowDepthPos.get(`${hnode.depth}:${flow.row}`)!;
       const siblingPos = flow.breadthCenter;
       const center: Vec2 = {
         x: depthPos * depthVec.x + siblingPos * sibVec.x,
@@ -584,6 +585,80 @@ export class DiagramRenderer {
     return { positioned, links: rootHierarchy.links(), pathFor };
   }
 
+  /** Corre el flow-wrap (hermanos por nivel, salto de sub-fila) y la
+   * acumulación de posiciones de profundidad completos para un
+   * `availableBreadth` dado — separado de `layoutLinear` para poder
+   * llamarlo repetidas veces durante la búsqueda binaria del ancho que
+   * deja el diagrama más "cuadrado", sin duplicar la lógica. */
+  private computeFlow(
+    byDepth: Map<number, HierarchyNode<TreeNode>[]>,
+    allNodes: HierarchyNode<TreeNode>[],
+    maxDepth: number,
+    geomById: Map<string, BoxGeom>,
+    depthVec: Vec2,
+    sibVec: Vec2,
+    availableBreadth: number
+  ): { flowById: Map<string, FlowPos>; rowDepthPos: Map<string, number>; depthExtent: number; breadthExtent: number } {
+    const flowById = new Map<string, FlowPos>();
+    const rowsUsedAtDepth = new Map<number, number>();
+    let breadthExtent = 0;
+    for (const [depth, group] of byDepth) {
+      let row = 0;
+      let cursor = 0;
+      for (const n of group) {
+        const geom = geomById.get(this.graphNode(n).id)!;
+        const halfW = geom.width / 2;
+        const halfH = geom.height / 2;
+        const bExtent = halfW * Math.abs(sibVec.x) + halfH * Math.abs(sibVec.y);
+        const size = bExtent * 2 + SIBLING_FLOW_GAP;
+        if (cursor > 0 && cursor + size > availableBreadth) {
+          row += 1;
+          cursor = 0;
+        }
+        const center = cursor + bExtent;
+        flowById.set(this.graphNode(n).id, { row, breadthCenter: center });
+        breadthExtent = Math.max(breadthExtent, center + bExtent);
+        cursor += size;
+      }
+      rowsUsedAtDepth.set(depth, row + 1);
+    }
+
+    // Grosor de cada sub-fila (una por depth+row), a partir SOLO de los
+    // nodos que realmente caen en ella — no un máximo global. Un único nodo
+    // enorme en cualquier parte del árbol inflaba antes el espacio entre
+    // TODOS los niveles/sub-filas del diagrama, incluso los que solo tenían
+    // nodos chiquitos, generando huecos enormes.
+    const rowHalfExtent = new Map<string, number>();
+    for (const n of allNodes) {
+      const id = this.graphNode(n).id;
+      const geom = geomById.get(id)!;
+      const flow = flowById.get(id)!;
+      const halfExtent = (geom.width / 2) * Math.abs(depthVec.x) + (geom.height / 2) * Math.abs(depthVec.y);
+      const key = `${n.depth}:${flow.row}`;
+      rowHalfExtent.set(key, Math.max(rowHalfExtent.get(key) ?? MIN_BOX_HEIGHT / 2, halfExtent));
+    }
+
+    // Posición (eje de profundidad) de cada sub-fila: se acumulan una tras
+    // otra dentro del mismo nivel (separadas por SUB_LANE_GAP, cada una tan
+    // gruesa como su nodo más grande) y el siguiente nivel empieza después
+    // de la última sub-fila del anterior, separado por LEVEL_GAP.
+    const rowDepthPos = new Map<string, number>();
+    let levelStart = 0;
+    for (let d = 0; d <= maxDepth; d++) {
+      const rows = rowsUsedAtDepth.get(d) ?? 1;
+      let cursor = levelStart;
+      for (let r = 0; r < rows; r++) {
+        const halfExtent = rowHalfExtent.get(`${d}:${r}`) ?? MIN_BOX_HEIGHT / 2;
+        const rowCenter = cursor + halfExtent;
+        rowDepthPos.set(`${d}:${r}`, rowCenter);
+        cursor = rowCenter + halfExtent + SUB_LANE_GAP;
+      }
+      levelStart = cursor - SUB_LANE_GAP + LEVEL_GAP;
+    }
+
+    return { flowById, rowDepthPos, depthExtent: levelStart, breadthExtent };
+  }
+
   /** Árbol radial: la raíz al centro, un anillo más separado por nivel
    * (radio = profundidad * paso), y los hijos de cada nodo repartidos en
    * círculo alrededor de él — nada va "en una sola dirección", así que un
@@ -593,18 +668,33 @@ export class DiagramRenderer {
     rootHierarchy: HierarchyNode<TreeNode>,
     geomById: Map<string, BoxGeom>
   ): { positioned: PositionedNode[]; links: Array<{ source: HierarchyNode<TreeNode>; target: HierarchyNode<TreeNode> }>; pathFor: (link: any) => string } {
-    let maxCircumRadius = MIN_BOX_HEIGHT / 2;
-    for (const geom of geomById.values()) {
-      maxCircumRadius = Math.max(maxCircumRadius, Math.hypot(geom.width, geom.height) / 2);
-    }
-    const minDepthStep = maxCircumRadius * 2 + LEVEL_GAP;
-
+    // Radio de cada anillo a partir SOLO de los nodos que realmente caen en
+    // ese nivel (y el anterior) — no de un máximo global, que inflaría la
+    // separación de TODOS los anillos por un único nodo enorme en
+    // cualquier parte del árbol (mismo problema que en layoutLinear).
     const maxDepth = Math.max(...rootHierarchy.descendants().map((n) => n.depth), 1);
+    const circumRadiusByDepth = new Map<number, number>();
+    for (const n of rootHierarchy.descendants()) {
+      const geom = geomById.get(this.graphNode(n).id)!;
+      const r = Math.hypot(geom.width, geom.height) / 2;
+      circumRadiusByDepth.set(n.depth, Math.max(circumRadiusByDepth.get(n.depth) ?? MIN_BOX_HEIGHT / 2, r));
+    }
+    const naturalRingRadius = new Map<number, number>([[0, 0]]);
+    for (let d = 1; d <= maxDepth; d++) {
+      const prevR = circumRadiusByDepth.get(d - 1) ?? MIN_BOX_HEIGHT / 2;
+      const curR = circumRadiusByDepth.get(d) ?? MIN_BOX_HEIGHT / 2;
+      naturalRingRadius.set(d, naturalRingRadius.get(d - 1)! + prevR + curR + LEVEL_GAP);
+    }
+
     const svgNode = this.svg.node();
     const viewportWidth = svgNode?.clientWidth || 800;
     const viewportHeight = svgNode?.clientHeight || 600;
     const availableRadius = (Math.min(viewportWidth, viewportHeight) / 2) * 0.9;
-    const depthStep = Math.max(minDepthStep, availableRadius / maxDepth);
+    const naturalTotal = naturalRingRadius.get(maxDepth)!;
+    // Árbol angosto/poco profundo: estirar todos los anillos por igual para
+    // aprovechar el espacio disponible, en vez de dejarlos amontonados en
+    // el centro.
+    const ringStretch = naturalTotal > 0 ? Math.max(1, availableRadius / naturalTotal) : 1;
 
     const radialLayout = tree<TreeNode>()
       .size([2 * Math.PI, 1])
@@ -615,7 +705,7 @@ export class DiagramRenderer {
     const positioned: PositionedNode[] = pointNodes.map((hnode) => {
       const geom = geomById.get(this.graphNode(hnode).id)!;
       const angle = hnode.x - Math.PI / 2;
-      const radius = hnode.depth * depthStep;
+      const radius = naturalRingRadius.get(hnode.depth)! * ringStretch;
       const center: Vec2 = { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
       return { hnode, center, geom, polar: { angle, radius } };
     });
