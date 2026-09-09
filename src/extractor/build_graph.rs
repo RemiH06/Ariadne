@@ -1,7 +1,10 @@
 use crate::config::IgnoreConfig;
 use crate::extractor::classify::classify;
-use crate::extractor::imports::{extract_imports, resolve_python_absolute, resolve_relative_import, top_level_package_name};
-use crate::extractor::manifests::{is_manifest_file, manifest_import_language, parse_manifest};
+use crate::extractor::imports::{
+    extract_imports, resolve_elixir_absolute, resolve_go_package, resolve_haskell_absolute, resolve_java_kotlin_absolute,
+    resolve_php_absolute, resolve_python_absolute, resolve_relative_import, resolve_rust, top_level_package_name,
+};
+use crate::extractor::manifests::{is_manifest_file, manifest_import_language, parse_composer_psr4, parse_go_module_name, parse_manifest};
 use crate::extractor::walk::walk;
 use crate::schema::{EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
 use anyhow::Result;
@@ -164,13 +167,63 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         .filter(|n| known_ids.contains(format!("{}/__init__.py", n.id).as_str()))
         .map(|n| (n.label.clone(), n.id.clone()))
         .collect();
+
+    // Contexto por lenguaje para resolver imports/referencias *absolutas* a
+    // módulos propios del proyecto (no relativas, no de una librería
+    // externa). Cada uno es una simplificación de raíz única — sin soporte
+    // de workspaces Cargo, módulos Go o paquetes PHP múltiples en un mismo
+    // repo todavía.
+    let rust_crate_root: Option<String> = known_ids.contains("Cargo.toml").then(|| "src".to_string());
+    let go_module_name: Option<String> = entries
+        .iter()
+        .find(|e| e.rel_path == "go.mod")
+        .and_then(|e| std::fs::read_to_string(&e.abs_path).ok())
+        .and_then(|content| parse_go_module_name(&content));
+    let java_source_roots: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.node_type == NodeType::Directory)
+        .filter(|n| n.id.ends_with("src/main/java") || n.id.ends_with("src/test/java"))
+        .map(|n| n.id.clone())
+        .collect();
+    let kotlin_source_roots: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.node_type == NodeType::Directory)
+        .filter(|n| n.id.ends_with("src/main/kotlin") || n.id.ends_with("src/test/kotlin"))
+        .map(|n| n.id.clone())
+        .collect();
+    let haskell_source_roots: Vec<String> = {
+        let mut roots: Vec<String> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::Directory)
+            .filter(|n| n.label == "src")
+            .map(|n| n.id.clone())
+            .collect();
+        roots.push(".".to_string());
+        roots
+    };
+    let elixir_lib_roots: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.node_type == NodeType::Directory)
+        .filter(|n| n.label == "lib")
+        .map(|n| n.id.clone())
+        .collect();
+    let (php_psr4_map, php_manifest_dir): (Vec<(String, String)>, String) = entries
+        .iter()
+        .find(|e| e.rel_path == "composer.json")
+        .and_then(|e| std::fs::read_to_string(&e.abs_path).ok().map(|content| (parse_composer_psr4(&content), parent_of(&e.rel_path))))
+        .unwrap_or_default();
+
     let mut seen_import_edges: HashSet<(String, String)> = HashSet::new();
+    const REFERENCE_LANGUAGES: &[&str] = &[
+        "javascript", "typescript", "python", "rust", "go", "java", "kotlin", "php", "ruby", "c", "cplusplus", "elixir", "haskell",
+        "julia", "r",
+    ];
 
     for node in &nodes {
         let Some(lang) = node.metadata.language.as_deref() else {
             continue;
         };
-        if !matches!(lang, "javascript" | "typescript" | "python") {
+        if !REFERENCE_LANGUAGES.contains(&lang) {
             continue;
         }
         let Some(&abs_path) = abs_path_by_id.get(node.id.as_str()) else {
@@ -182,7 +235,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
 
         let lang_group = match lang {
             "javascript" | "typescript" => "javascript",
-            "python" => "python",
+            "java" | "kotlin" => "java",
             _ => lang,
         };
         let file_dir = parent_of(&node.id);
@@ -191,21 +244,37 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         for import_ref in extract_imports(lang, &content) {
             let target = resolve_relative_import(&node.id, &import_ref.specifier, lang, &known_ids)
                 .or_else(|| {
-                    // No era relativo: si es Python, probar contra los
-                    // paquetes propios del proyecto (carpetas con __init__.py)
-                    // antes de asumir que es una librería externa.
-                    if lang == "python" {
-                        resolve_python_absolute(&import_ref.specifier, &python_package_roots, &known_ids)
-                    } else {
-                        None
+                    // No era relativo: probar contra convenciones propias
+                    // del proyecto para módulos/paquetes absolutos, antes de
+                    // asumir que se trata de una librería externa.
+                    match lang {
+                        "python" => resolve_python_absolute(&import_ref.specifier, &python_package_roots, &known_ids),
+                        "rust" => resolve_rust(&node.id, &import_ref.specifier, rust_crate_root.as_deref(), &known_ids),
+                        "go" => go_module_name.as_deref().and_then(|module| resolve_go_package(&import_ref.specifier, module, &known_ids)),
+                        "java" => resolve_java_kotlin_absolute(&import_ref.specifier, &java_source_roots, "java", &known_ids),
+                        "kotlin" => resolve_java_kotlin_absolute(&import_ref.specifier, &kotlin_source_roots, "kt", &known_ids),
+                        "php" => resolve_php_absolute(&import_ref.specifier, &php_psr4_map, &php_manifest_dir, &known_ids),
+                        "elixir" => resolve_elixir_absolute(&import_ref.specifier, &elixir_lib_roots, &known_ids),
+                        "haskell" => resolve_haskell_absolute(&import_ref.specifier, &haskell_source_roots, &known_ids),
+                        _ => None,
                     }
                 })
                 .or_else(|| {
                     // Tampoco es un módulo propio del proyecto: probar si
                     // coincide con una dependencia del manifiesto más
-                    // cercano, para conectar con el nodo `library` ya detectado.
+                    // cercano, para conectar con el nodo `library` ya
+                    // detectado. Rust admite tanto guion como guion bajo en
+                    // el nombre del crate (Cargo.toml vs. `use`).
                     let pkg_name = top_level_package_name(lang, &import_ref.specifier);
-                    nearest_deps.and_then(|deps| deps.get(&pkg_name).cloned())
+                    nearest_deps.and_then(|deps| {
+                        deps.get(&pkg_name).cloned().or_else(|| {
+                            if lang != "rust" {
+                                return None;
+                            }
+                            let alt = if pkg_name.contains('_') { pkg_name.replace('_', "-") } else { pkg_name.replace('-', "_") };
+                            deps.get(&alt).cloned()
+                        })
+                    })
                 });
 
             let Some(target) = target else {

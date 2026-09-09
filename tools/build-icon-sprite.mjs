@@ -36,6 +36,8 @@ const ICONS = {
   lua: ["lua-original"],
   haskell: ["haskell-original"],
   perl: ["perl-original"],
+  julia: ["julia-original"],
+  r: ["r-original"],
 };
 
 async function readIconSource(key, variants) {

@@ -189,6 +189,8 @@ fn language_for_extension(ext: &str) -> Option<&'static str> {
         "hs" => "haskell",
         "pl" | "pm" => "perl",
         "ex" | "exs" => "elixir",
+        "jl" => "julia",
+        "r" => "r",
         _ => return None,
     })
 }

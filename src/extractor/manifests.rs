@@ -18,6 +18,8 @@ enum ManifestKind {
     PomXml,
     Gradle,
     RDescription,
+    ComposerJson,
+    ProjectToml,
 }
 
 fn manifest_kind_for(filename: &str) -> Option<ManifestKind> {
@@ -31,6 +33,8 @@ fn manifest_kind_for(filename: &str) -> Option<ManifestKind> {
         "pom.xml" => Some(ManifestKind::PomXml),
         "build.gradle" | "build.gradle.kts" => Some(ManifestKind::Gradle),
         "DESCRIPTION" => Some(ManifestKind::RDescription),
+        "composer.json" => Some(ManifestKind::ComposerJson),
+        "Project.toml" => Some(ManifestKind::ProjectToml),
         _ => None,
     }
 }
@@ -42,12 +46,18 @@ pub fn is_manifest_file(filename: &str) -> bool {
 /// Con qué lenguaje de import (ver extractor::imports) se corresponde un
 /// manifiesto — permite cruzar los imports de un archivo contra las
 /// dependencias declaradas en el manifiesto más cercano. `None` para
-/// lenguajes donde todavía no extraemos imports (Rust, Go, Java, etc.).
+/// lenguajes donde todavía no extraemos imports.
 pub fn manifest_import_language(filename: &str) -> Option<&'static str> {
     match manifest_kind_for(filename)? {
         ManifestKind::PackageJson => Some("javascript"),
         ManifestKind::RequirementsTxt | ManifestKind::PyprojectToml => Some("python"),
-        _ => None,
+        ManifestKind::ComposerJson => Some("php"),
+        ManifestKind::ProjectToml => Some("julia"),
+        ManifestKind::RDescription => Some("r"),
+        ManifestKind::CargoToml => Some("rust"),
+        ManifestKind::GoMod => Some("go"),
+        ManifestKind::MixExs => Some("elixir"),
+        ManifestKind::PomXml | ManifestKind::Gradle => Some("java"),
     }
 }
 
@@ -67,6 +77,8 @@ pub fn parse_manifest(filename: &str, content: &str) -> Vec<LibraryDep> {
         Some(ManifestKind::PomXml) => parse_pom_xml(content),
         Some(ManifestKind::Gradle) => parse_gradle(content),
         Some(ManifestKind::RDescription) => parse_r_description(content),
+        Some(ManifestKind::ComposerJson) => parse_composer_json(content),
+        Some(ManifestKind::ProjectToml) => parse_project_toml(content),
         None => Vec::new(),
     };
     dedupe(deps)
@@ -210,6 +222,19 @@ fn parse_go_mod(content: &str) -> Vec<LibraryDep> {
         deps.push(LibraryDep { name: module.to_string(), version });
     }
     deps
+}
+
+/// La línea `module ...` de `go.mod` — el prefijo de import que identifica
+/// paquetes propios del proyecto (cualquier import que empiece con esto es
+/// interno, el resto es una dependencia externa).
+pub fn parse_go_module_name(content: &str) -> Option<String> {
+    for raw_line in content.lines() {
+        let line = raw_line.split("//").next().unwrap_or("").trim();
+        if let Some(rest) = line.strip_prefix("module ") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
 }
 
 /// Heurístico, no un parser de Elixir: busca tuplas `{:nombre, "versión"}`
@@ -364,6 +389,75 @@ fn parse_r_description(content: &str) -> Vec<LibraryDep> {
     deps
 }
 
+fn parse_composer_json(content: &str) -> Vec<LibraryDep> {
+    let Ok(value) = serde_json::from_str::<JsonValue>(content) else {
+        return Vec::new();
+    };
+    let mut deps = Vec::new();
+    for field in ["require", "require-dev"] {
+        let Some(obj) = value.get(field).and_then(|v| v.as_object()) else {
+            continue;
+        };
+        for (name, version) in obj {
+            if name == "php" || name.starts_with("ext-") {
+                continue; // no son paquetes de Composer, son requisitos de runtime
+            }
+            deps.push(LibraryDep {
+                name: name.clone(),
+                version: version.as_str().map(String::from),
+            });
+        }
+    }
+    deps
+}
+
+/// Mapeo PSR-4 de `composer.json` (`autoload.psr-4` y `autoload-dev.psr-4`):
+/// prefijo de namespace -> carpeta relativa al manifiesto. Se usa para
+/// resolver imports *absolutos* de PHP (`use App\Models\User;`) contra
+/// archivos propios del proyecto, no para nodos `library` — por eso vive
+/// aparte de `parse_manifest`/`LibraryDep`.
+pub fn parse_composer_psr4(content: &str) -> Vec<(String, String)> {
+    let Ok(value) = serde_json::from_str::<JsonValue>(content) else {
+        return Vec::new();
+    };
+    let mut mappings = Vec::new();
+    for field in ["autoload", "autoload-dev"] {
+        let Some(psr4) = value.get(field).and_then(|a| a.get("psr-4")).and_then(|p| p.as_object()) else {
+            continue;
+        };
+        for (prefix, dir) in psr4 {
+            let Some(dir) = dir.as_str() else { continue };
+            let prefix = prefix.trim_end_matches('\\').to_string();
+            let dir = dir.trim_end_matches('/').to_string();
+            mappings.push((prefix, dir));
+        }
+    }
+    mappings
+}
+
+fn parse_project_toml(content: &str) -> Vec<LibraryDep> {
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
+        return Vec::new();
+    };
+    // [deps] en Project.toml mapea nombre -> UUID (no versión); la versión,
+    // si está fijada, vive aparte en [compat] como nombre -> rango.
+    let Some(deps_table) = value.get("deps").and_then(|d| d.as_table()) else {
+        return Vec::new();
+    };
+    let compat_table = value.get("compat").and_then(|c| c.as_table());
+
+    deps_table
+        .keys()
+        .map(|name| {
+            let version = compat_table
+                .and_then(|c| c.get(name))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            LibraryDep { name: name.clone(), version }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,6 +538,12 @@ fastapi = "^0.100"
     }
 
     #[test]
+    fn parses_go_module_name() {
+        let content = "module example.com/foo\n\ngo 1.21\n";
+        assert_eq!(parse_go_module_name(content).as_deref(), Some("example.com/foo"));
+    }
+
+    #[test]
     fn parses_mix_exs_deps() {
         let content = r#"
 defp deps do
@@ -501,5 +601,48 @@ dependencies {
         assert!(parse_manifest("random.txt", "anything").is_empty());
         assert!(!is_manifest_file("random.txt"));
         assert!(is_manifest_file("Cargo.toml"));
+    }
+
+    #[test]
+    fn parses_composer_json_deps() {
+        let content = r#"{
+            "require": { "php": ">=8.1", "guzzlehttp/guzzle": "^7.0" },
+            "require-dev": { "phpunit/phpunit": "^10.0" }
+        }"#;
+        let deps = parse_manifest("composer.json", content);
+        assert_eq!(names(&deps), vec!["guzzlehttp/guzzle", "phpunit/phpunit"]);
+    }
+
+    #[test]
+    fn parses_composer_psr4_autoload() {
+        let content = r#"{
+            "autoload": { "psr-4": { "App\\": "src/" } },
+            "autoload-dev": { "psr-4": { "Tests\\": "tests/" } }
+        }"#;
+        let mut mappings = parse_composer_psr4(content);
+        mappings.sort();
+        assert_eq!(mappings, vec![("App".to_string(), "src".to_string()), ("Tests".to_string(), "tests".to_string())]);
+    }
+
+    #[test]
+    fn parses_project_toml_deps_with_compat_version() {
+        let content = r#"
+name = "Demo"
+
+[deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+
+[compat]
+DataFrames = "1.6"
+"#;
+        let deps = parse_manifest("Project.toml", content);
+        let mut found = names(&deps);
+        found.sort_unstable();
+        assert_eq!(found, vec!["DataFrames", "JSON"]);
+        let dataframes = deps.iter().find(|d| d.name == "DataFrames").unwrap();
+        assert_eq!(dataframes.version.as_deref(), Some("1.6"));
+        let json_dep = deps.iter().find(|d| d.name == "JSON").unwrap();
+        assert_eq!(json_dep.version, None);
     }
 }
