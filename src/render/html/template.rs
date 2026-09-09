@@ -71,10 +71,33 @@ pub fn render(input: TemplateInput) -> String {
     height: 100%;
     display: block;
   }}
-  #ariadne-controls {{
+  #ariadne-controls-toggle {{
     position: absolute;
     top: 12px;
     left: 12px;
+    z-index: 11;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ariadne-bg);
+    color: var(--ariadne-text);
+    border: 1px solid var(--ariadne-link);
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    transition: border-color 0.15s ease;
+  }}
+  #ariadne-controls-toggle:hover {{
+    border-color: var(--ariadne-accent);
+  }}
+  #ariadne-controls {{
+    position: absolute;
+    top: 12px;
+    left: 54px;
     z-index: 10;
     background: var(--ariadne-bg);
     border: 1px solid var(--ariadne-link);
@@ -87,6 +110,12 @@ pub fn render(input: TemplateInput) -> String {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
     max-height: calc(100vh - 24px);
     overflow-y: auto;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }}
+  #ariadne-controls.ariadne-collapsed {{
+    opacity: 0;
+    transform: translateX(-8px);
+    pointer-events: none;
   }}
   .ariadne-legend {{
     display: flex;
@@ -251,6 +280,7 @@ pub fn render(input: TemplateInput) -> String {
       </feMerge>
     </filter>
   </svg>
+  <button id="ariadne-controls-toggle" title="Mostrar/ocultar panel">◂</button>
   <div id="ariadne-controls">
     <span class="ariadne-title">{title}</span>
 

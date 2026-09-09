@@ -58,6 +58,13 @@ function main(): void {
   const fitButton = document.getElementById("ariadne-fit-btn");
   fitButton?.addEventListener("click", () => renderer.fit());
 
+  const controlsPanel = document.getElementById("ariadne-controls");
+  const controlsToggle = document.getElementById("ariadne-controls-toggle");
+  controlsToggle?.addEventListener("click", () => {
+    const collapsed = controlsPanel?.classList.toggle("ariadne-collapsed");
+    controlsToggle.textContent = collapsed ? "▸" : "◂";
+  });
+
   const showRefsInput = document.getElementById("ariadne-filter-show-refs") as HTMLInputElement | null;
   showRefsInput?.addEventListener("change", () => {
     renderer.setShowReferences(showRefsInput.checked);
