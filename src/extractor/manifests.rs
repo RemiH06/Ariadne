@@ -1,0 +1,493 @@
+use serde_json::Value as JsonValue;
+use std::collections::HashSet;
+
+/// Una dependencia declarada en un manifiesto, con la versión tal cual
+/// aparece ahí (puede ser un rango/especificador, no un valor pineado).
+pub struct LibraryDep {
+    pub name: String,
+    pub version: Option<String>,
+}
+
+enum ManifestKind {
+    CargoToml,
+    PackageJson,
+    RequirementsTxt,
+    PyprojectToml,
+    GoMod,
+    MixExs,
+    PomXml,
+    Gradle,
+    RDescription,
+}
+
+fn manifest_kind_for(filename: &str) -> Option<ManifestKind> {
+    match filename {
+        "Cargo.toml" => Some(ManifestKind::CargoToml),
+        "package.json" => Some(ManifestKind::PackageJson),
+        "requirements.txt" => Some(ManifestKind::RequirementsTxt),
+        "pyproject.toml" => Some(ManifestKind::PyprojectToml),
+        "go.mod" => Some(ManifestKind::GoMod),
+        "mix.exs" => Some(ManifestKind::MixExs),
+        "pom.xml" => Some(ManifestKind::PomXml),
+        "build.gradle" | "build.gradle.kts" => Some(ManifestKind::Gradle),
+        "DESCRIPTION" => Some(ManifestKind::RDescription),
+        _ => None,
+    }
+}
+
+pub fn is_manifest_file(filename: &str) -> bool {
+    manifest_kind_for(filename).is_some()
+}
+
+/// Extrae las dependencias declaradas en un manifiesto reconocido. Cada
+/// formato tiene su propio parser; los basados en datos (TOML/JSON) son
+/// exactos, los basados en código (mix.exs, Gradle) son heurísticos por
+/// regex/escaneo manual — no hay parser real de Elixir/Kotlin/Groovy acá,
+/// solo reconocimiento del patrón usual de declarar dependencias.
+pub fn parse_manifest(filename: &str, content: &str) -> Vec<LibraryDep> {
+    let deps = match manifest_kind_for(filename) {
+        Some(ManifestKind::CargoToml) => parse_cargo_toml(content),
+        Some(ManifestKind::PackageJson) => parse_package_json(content),
+        Some(ManifestKind::RequirementsTxt) => parse_requirements_txt(content),
+        Some(ManifestKind::PyprojectToml) => parse_pyproject_toml(content),
+        Some(ManifestKind::GoMod) => parse_go_mod(content),
+        Some(ManifestKind::MixExs) => parse_mix_exs(content),
+        Some(ManifestKind::PomXml) => parse_pom_xml(content),
+        Some(ManifestKind::Gradle) => parse_gradle(content),
+        Some(ManifestKind::RDescription) => parse_r_description(content),
+        None => Vec::new(),
+    };
+    dedupe(deps)
+}
+
+fn dedupe(deps: Vec<LibraryDep>) -> Vec<LibraryDep> {
+    let mut seen = HashSet::new();
+    deps.into_iter().filter(|d| seen.insert(d.name.clone())).collect()
+}
+
+fn parse_cargo_toml(content: &str) -> Vec<LibraryDep> {
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
+        return Vec::new();
+    };
+    let mut deps = Vec::new();
+    for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(table) = value.get(table_name).and_then(|v| v.as_table()) else {
+            continue;
+        };
+        for (name, spec) in table {
+            let version = match spec {
+                toml::Value::String(s) => Some(s.clone()),
+                toml::Value::Table(t) => t.get("version").and_then(|v| v.as_str()).map(String::from),
+                _ => None,
+            };
+            deps.push(LibraryDep { name: name.clone(), version });
+        }
+    }
+    deps
+}
+
+fn parse_package_json(content: &str) -> Vec<LibraryDep> {
+    let Ok(value) = serde_json::from_str::<JsonValue>(content) else {
+        return Vec::new();
+    };
+    let mut deps = Vec::new();
+    for field in ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] {
+        let Some(obj) = value.get(field).and_then(|v| v.as_object()) else {
+            continue;
+        };
+        for (name, version) in obj {
+            deps.push(LibraryDep {
+                name: name.clone(),
+                version: version.as_str().map(String::from),
+            });
+        }
+    }
+    deps
+}
+
+fn parse_requirements_txt(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() || line.starts_with('-') {
+            continue;
+        }
+        let cut = line.find(|c: char| "=<>!~;[".contains(c)).unwrap_or(line.len());
+        let name = line[..cut].trim();
+        if name.is_empty() {
+            continue;
+        }
+        let version = if cut < line.len() { Some(line[cut..].trim().to_string()) } else { None };
+        deps.push(LibraryDep { name: name.to_string(), version });
+    }
+    deps
+}
+
+fn parse_pyproject_toml(content: &str) -> Vec<LibraryDep> {
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
+        return Vec::new();
+    };
+    let mut deps = Vec::new();
+
+    // PEP 621: [project] dependencies = ["requests>=2.0", ...]
+    if let Some(list) = value
+        .get("project")
+        .and_then(|p| p.get("dependencies"))
+        .and_then(|d| d.as_array())
+    {
+        for item in list {
+            let Some(spec) = item.as_str() else { continue };
+            let cut = spec.find(|c: char| "=<>!~;[ ".contains(c)).unwrap_or(spec.len());
+            let name = spec[..cut].trim();
+            if name.is_empty() {
+                continue;
+            }
+            let version = if cut < spec.len() { Some(spec[cut..].trim().to_string()) } else { None };
+            deps.push(LibraryDep { name: name.to_string(), version });
+        }
+    }
+
+    // Poetry: [tool.poetry.dependencies] nombre = "version" (o tabla con version=)
+    if let Some(table) = value
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("dependencies"))
+        .and_then(|d| d.as_table())
+    {
+        for (name, spec) in table {
+            if name == "python" {
+                continue;
+            }
+            let version = match spec {
+                toml::Value::String(s) => Some(s.clone()),
+                toml::Value::Table(t) => t.get("version").and_then(|v| v.as_str()).map(String::from),
+                _ => None,
+            };
+            deps.push(LibraryDep { name: name.clone(), version });
+        }
+    }
+
+    deps
+}
+
+fn parse_go_mod(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    let mut in_require_block = false;
+    for raw_line in content.lines() {
+        let line = raw_line.split("//").next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with("require (") {
+            in_require_block = true;
+            continue;
+        }
+        if in_require_block && line == ")" {
+            in_require_block = false;
+            continue;
+        }
+        let entry = if in_require_block {
+            Some(line)
+        } else {
+            line.strip_prefix("require ").map(str::trim)
+        };
+        let Some(entry) = entry else { continue };
+        let mut parts = entry.split_whitespace();
+        let Some(module) = parts.next() else { continue };
+        let version = parts.next().map(str::to_string);
+        deps.push(LibraryDep { name: module.to_string(), version });
+    }
+    deps
+}
+
+/// Heurístico, no un parser de Elixir: busca tuplas `{:nombre, "versión"}`
+/// en todo el archivo (el patrón habitual de declarar deps en `mix.exs`),
+/// descartando átomos que claramente son config y no paquetes.
+const MIX_NON_PACKAGE_ATOMS: &[&str] = &["mod", "extra_applications", "applications", "included_applications", "env", "licenses", "links", "package"];
+
+fn parse_mix_exs(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    let chars: Vec<char> = content.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' && i + 1 < chars.len() && chars[i + 1] == ':' {
+            let name_start = i + 2;
+            let mut j = name_start;
+            while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                j += 1;
+            }
+            if j > name_start {
+                let name: String = chars[name_start..j].iter().collect();
+                let mut k = j;
+                let mut version = None;
+                while k < chars.len() && chars[k] != '}' && chars[k] != '{' {
+                    if chars[k] == '"' {
+                        let vstart = k + 1;
+                        let mut vend = vstart;
+                        while vend < chars.len() && chars[vend] != '"' {
+                            vend += 1;
+                        }
+                        version = Some(chars[vstart..vend].iter().collect());
+                        break;
+                    }
+                    k += 1;
+                }
+                if version.is_some() && !MIX_NON_PACKAGE_ATOMS.contains(&name.as_str()) {
+                    deps.push(LibraryDep { name, version });
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    deps
+}
+
+fn parse_pom_xml(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    for block in content.split("<dependency>").skip(1) {
+        let block = block.split("</dependency>").next().unwrap_or("");
+        let group = extract_xml_tag(block, "groupId");
+        let artifact = extract_xml_tag(block, "artifactId");
+        let version = extract_xml_tag(block, "version");
+        let Some(artifact) = artifact else { continue };
+        let name = match group {
+            Some(g) => format!("{g}:{artifact}"),
+            None => artifact,
+        };
+        deps.push(LibraryDep { name, version });
+    }
+    deps
+}
+
+fn extract_xml_tag(block: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = block.find(&open)? + open.len();
+    let end = block[start..].find(&close)? + start;
+    Some(block[start..end].trim().to_string())
+}
+
+/// Heurístico, no un parser de Gradle: reconoce declaraciones típicas como
+/// `implementation("group:artifact:version")` (Kotlin DSL) o
+/// `implementation 'group:artifact:version'` (Groovy).
+const GRADLE_DEP_KEYWORDS: &[&str] = &[
+    "implementation",
+    "api",
+    "compileOnly",
+    "runtimeOnly",
+    "testImplementation",
+    "testRuntimeOnly",
+    "annotationProcessor",
+    "classpath",
+];
+
+fn parse_gradle(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if !GRADLE_DEP_KEYWORDS.iter().any(|k| line.starts_with(k)) {
+            continue;
+        }
+        for quote in ['"', '\''] {
+            let Some(start) = line.find(quote) else { continue };
+            let Some(len) = line[start + 1..].find(quote) else { continue };
+            let coord = &line[start + 1..start + 1 + len];
+            let parts: Vec<&str> = coord.split(':').collect();
+            if parts.len() >= 2 {
+                let name = format!("{}:{}", parts[0], parts[1]);
+                let version = parts.get(2).map(|s| s.to_string());
+                deps.push(LibraryDep { name, version });
+            }
+            break;
+        }
+    }
+    deps
+}
+
+const R_DEP_FIELDS: &[&str] = &["Imports", "Depends", "Suggests", "LinkingTo"];
+
+fn parse_r_description(content: &str) -> Vec<LibraryDep> {
+    let mut deps = Vec::new();
+    let mut current_field: Option<String> = None;
+    let mut buffer = String::new();
+
+    let flush = |field: &Option<String>, buffer: &str, deps: &mut Vec<LibraryDep>| {
+        let Some(field) = field else { return };
+        if !R_DEP_FIELDS.contains(&field.as_str()) {
+            return;
+        }
+        for entry in buffer.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let name_end = entry.find('(').unwrap_or(entry.len());
+            let name = entry[..name_end].trim();
+            if name.is_empty() || name.eq_ignore_ascii_case("R") {
+                continue;
+            }
+            let version = if name_end < entry.len() {
+                Some(entry[name_end..].trim_matches(|c| c == '(' || c == ')').trim().to_string())
+            } else {
+                None
+            };
+            deps.push(LibraryDep { name: name.to_string(), version });
+        }
+    };
+
+    for line in content.lines() {
+        if line.starts_with(char::is_whitespace) && current_field.is_some() {
+            buffer.push(' ');
+            buffer.push_str(line.trim());
+        } else if let Some((field, rest)) = line.split_once(':') {
+            flush(&current_field, &buffer, &mut deps);
+            current_field = Some(field.trim().to_string());
+            buffer = rest.trim().to_string();
+        }
+    }
+    flush(&current_field, &buffer, &mut deps);
+
+    deps
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn names(deps: &[LibraryDep]) -> Vec<&str> {
+        deps.iter().map(|d| d.name.as_str()).collect()
+    }
+
+    #[test]
+    fn parses_cargo_toml() {
+        let content = r#"
+[package]
+name = "demo"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+
+[dev-dependencies]
+tempfile = "3"
+"#;
+        let deps = parse_manifest("Cargo.toml", content);
+        // las tablas de `dependencies`/`dev-dependencies` no preservan el
+        // orden de declaración (sin la feature `preserve_order`), así que
+        // comparamos como conjunto, no como secuencia.
+        let mut found = names(&deps);
+        found.sort_unstable();
+        assert_eq!(found, vec!["anyhow", "serde", "tempfile"]);
+
+        let serde_dep = deps.iter().find(|d| d.name == "serde").unwrap();
+        assert_eq!(serde_dep.version.as_deref(), Some("1.0"));
+        let anyhow_dep = deps.iter().find(|d| d.name == "anyhow").unwrap();
+        assert_eq!(anyhow_dep.version.as_deref(), Some("1.0"));
+    }
+
+    #[test]
+    fn parses_package_json() {
+        let content = r#"{
+            "dependencies": { "react": "^18.0.0" },
+            "devDependencies": { "vitest": "^1.0.0" }
+        }"#;
+        let deps = parse_manifest("package.json", content);
+        assert_eq!(names(&deps), vec!["react", "vitest"]);
+        assert_eq!(deps[0].version.as_deref(), Some("^18.0.0"));
+    }
+
+    #[test]
+    fn parses_requirements_txt() {
+        let content = "# comment\nrequests==2.31.0\nflask>=2.0\n-r other.txt\nnumpy\n";
+        let deps = parse_manifest("requirements.txt", content);
+        assert_eq!(names(&deps), vec!["requests", "flask", "numpy"]);
+        assert_eq!(deps[0].version.as_deref(), Some("==2.31.0"));
+        assert_eq!(deps[2].version, None);
+    }
+
+    #[test]
+    fn parses_pyproject_toml_pep621_and_poetry() {
+        let pep621 = r#"
+[project]
+dependencies = ["requests>=2.0", "click"]
+"#;
+        assert_eq!(names(&parse_manifest("pyproject.toml", pep621)), vec!["requests", "click"]);
+
+        let poetry = r#"
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.100"
+"#;
+        assert_eq!(names(&parse_manifest("pyproject.toml", poetry)), vec!["fastapi"]);
+    }
+
+    #[test]
+    fn parses_go_mod() {
+        let content = "module example.com/foo\n\ngo 1.21\n\nrequire (\n\tgithub.com/a/b v1.2.3\n\tgithub.com/c/d v4.5.6\n)\n\nrequire github.com/e/f v0.1.0\n";
+        let deps = parse_manifest("go.mod", content);
+        assert_eq!(names(&deps), vec!["github.com/a/b", "github.com/c/d", "github.com/e/f"]);
+        assert_eq!(deps[0].version.as_deref(), Some("v1.2.3"));
+    }
+
+    #[test]
+    fn parses_mix_exs_deps() {
+        let content = r#"
+defp deps do
+  [
+    {:phoenix, "~> 1.7"},
+    {:ecto, "~> 3.10"},
+    {:mod, {MyApp, []}}
+  ]
+end
+"#;
+        let deps = parse_manifest("mix.exs", content);
+        assert_eq!(names(&deps), vec!["phoenix", "ecto"]);
+    }
+
+    #[test]
+    fn parses_pom_xml() {
+        let content = r#"
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+      <version>5.3.0</version>
+    </dependency>
+  </dependencies>
+</project>
+"#;
+        let deps = parse_manifest("pom.xml", content);
+        assert_eq!(names(&deps), vec!["org.springframework:spring-core"]);
+        assert_eq!(deps[0].version.as_deref(), Some("5.3.0"));
+    }
+
+    #[test]
+    fn parses_gradle_kts() {
+        let content = r#"
+dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
+    testImplementation("junit:junit:4.13.2")
+}
+"#;
+        let deps = parse_manifest("build.gradle.kts", content);
+        assert_eq!(names(&deps), vec!["org.jetbrains.kotlin:kotlin-stdlib", "junit:junit"]);
+    }
+
+    #[test]
+    fn parses_r_description() {
+        let content = "Package: demo\nImports:\n    dplyr (>= 1.0.0),\n    ggplot2,\n    R (>= 4.0)\nSuggests: testthat\n";
+        let deps = parse_manifest("DESCRIPTION", content);
+        assert_eq!(names(&deps), vec!["dplyr", "ggplot2", "testthat"]);
+        assert_eq!(deps[0].version.as_deref(), Some(">= 1.0.0"));
+    }
+
+    #[test]
+    fn unknown_filename_yields_no_deps() {
+        assert!(parse_manifest("random.txt", "anything").is_empty());
+        assert!(!is_manifest_file("random.txt"));
+        assert!(is_manifest_file("Cargo.toml"));
+    }
+}

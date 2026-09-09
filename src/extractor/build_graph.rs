@@ -1,5 +1,6 @@
 use crate::config::IgnoreConfig;
 use crate::extractor::classify::classify;
+use crate::extractor::manifests::{is_manifest_file, parse_manifest};
 use crate::extractor::walk::walk;
 use crate::schema::{EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
 use anyhow::Result;
@@ -66,6 +67,39 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
             metadata: NodeMetadata::default(),
         },
     );
+
+    // Manifiestos de dependencias (Cargo.toml, package.json, etc.): cada
+    // dependencia declarada se agrega como un nodo `library`, hijo del
+    // archivo manifiesto — así el árbol muestra de dónde sale cada una.
+    for entry in &entries {
+        let filename = entry.abs_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if entry.is_dir || !is_manifest_file(filename) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&entry.abs_path) else {
+            continue;
+        };
+        let manifest_depth = entry.rel_path.split('/').count() as u32;
+        for dep in parse_manifest(filename, &content) {
+            let lib_id = format!("{}::lib::{}", entry.rel_path, dep.name);
+            let mut extra = serde_json::Map::new();
+            if let Some(version) = &dep.version {
+                extra.insert("version".to_string(), serde_json::Value::String(version.clone()));
+            }
+            nodes.push(GraphNode {
+                id: lib_id.clone(),
+                node_type: NodeType::Library,
+                label: dep.name,
+                path: lib_id,
+                parent_id: Some(entry.rel_path.clone()),
+                depth: manifest_depth + 1,
+                metadata: NodeMetadata {
+                    extra,
+                    ..Default::default()
+                },
+            });
+        }
+    }
 
     let mut counts: HashMap<String, u32> = HashMap::new();
     for node in &nodes {
