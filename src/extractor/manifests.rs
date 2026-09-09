@@ -39,6 +39,18 @@ pub fn is_manifest_file(filename: &str) -> bool {
     manifest_kind_for(filename).is_some()
 }
 
+/// Con qué lenguaje de import (ver extractor::imports) se corresponde un
+/// manifiesto — permite cruzar los imports de un archivo contra las
+/// dependencias declaradas en el manifiesto más cercano. `None` para
+/// lenguajes donde todavía no extraemos imports (Rust, Go, Java, etc.).
+pub fn manifest_import_language(filename: &str) -> Option<&'static str> {
+    match manifest_kind_for(filename)? {
+        ManifestKind::PackageJson => Some("javascript"),
+        ManifestKind::RequirementsTxt | ManifestKind::PyprojectToml => Some("python"),
+        _ => None,
+    }
+}
+
 /// Extrae las dependencias declaradas en un manifiesto reconocido. Cada
 /// formato tiene su propio parser; los basados en datos (TOML/JSON) son
 /// exactos, los basados en código (mix.exs, Gradle) son heurísticos por

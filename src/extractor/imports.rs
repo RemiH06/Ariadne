@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Un import tal cual aparece en el código fuente, sin resolver todavía.
 pub struct ImportRef {
@@ -115,6 +115,26 @@ fn extract_python_imports(content: &str) -> Vec<String> {
     specs
 }
 
+/// Nombre de paquete de "primer nivel" de un specifier, para cruzarlo contra
+/// las dependencias declaradas en el manifiesto más cercano. En Python es el
+/// primer segmento antes del punto (`ortools.constraint_solver` -> `ortools`);
+/// en JS/TS es el paquete completo si es scoped (`@types/node`) o el primer
+/// segmento si no (`lodash/debounce` -> `lodash`).
+pub fn top_level_package_name(language: &str, specifier: &str) -> String {
+    if language == "python" {
+        return specifier.split('.').next().unwrap_or(specifier).to_string();
+    }
+    if specifier.starts_with('@') {
+        let mut parts = specifier.splitn(3, '/');
+        let scope = parts.next().unwrap_or(specifier);
+        return match parts.next() {
+            Some(name) => format!("{scope}/{name}"),
+            None => specifier.to_string(),
+        };
+    }
+    specifier.split('/').next().unwrap_or(specifier).to_string()
+}
+
 /// Solo resuelve imports **relativos** contra archivos que ya existen en el
 /// grafo — imports absolutos/de paquete (`crate::foo`, `import myapp.utils`)
 /// necesitarían entender el layout de resolución de módulos del proyecto
@@ -203,6 +223,38 @@ fn resolve_python_relative(importer_rel_path: &str, spec: &str, known_ids: &Hash
     None
 }
 
+/// Resuelve un import **absoluto** de Python contra paquetes propios del
+/// proyecto — no contra archivos por ruta relativa como `resolve_python_relative`.
+/// La heurística: cualquier carpeta con `__init__.py` es un paquete, y su
+/// nombre es el nombre de la carpeta (la misma convención que usa el propio
+/// Python/pip). `mapo_core.db` con un paquete registrado `mapo_core` ->
+/// `.../mapo_core/db.py`. Si el mismo nombre de paquete aparece en más de un
+/// lugar del proyecto, gana el que se haya registrado último (ambigüedad
+/// rara en la práctica: dos paquetes instalables con el mismo nombre no
+/// pueden coexistir realmente).
+pub fn resolve_python_absolute(specifier: &str, package_roots: &HashMap<String, String>, known_ids: &HashSet<&str>) -> Option<String> {
+    if specifier.starts_with('.') {
+        return None;
+    }
+    let mut parts = specifier.split('.');
+    let top = parts.next()?;
+    let package_dir = package_roots.get(top)?;
+    let rest: Vec<&str> = parts.collect();
+
+    let combined = if rest.is_empty() {
+        package_dir.clone()
+    } else {
+        format!("{package_dir}/{}", rest.join("/"))
+    };
+
+    for candidate in [format!("{combined}.py"), format!("{combined}/__init__.py")] {
+        if known_ids.contains(candidate.as_str()) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn normalize_path(base_dir: &str, spec: &str) -> String {
     let mut segments: Vec<&str> = if base_dir == "." { Vec::new() } else { base_dir.split('/').collect() };
     for part in spec.split('/') {
@@ -234,6 +286,24 @@ mod tests {
 
     fn specs(refs: &[ImportRef]) -> Vec<&str> {
         refs.iter().map(|r| r.specifier.as_str()).collect()
+    }
+
+    #[test]
+    fn top_level_name_python_dotted() {
+        assert_eq!(top_level_package_name("python", "ortools.constraint_solver"), "ortools");
+        assert_eq!(top_level_package_name("python", "numpy"), "numpy");
+    }
+
+    #[test]
+    fn top_level_name_js_plain_and_subpath() {
+        assert_eq!(top_level_package_name("javascript", "react"), "react");
+        assert_eq!(top_level_package_name("javascript", "lodash/debounce"), "lodash");
+    }
+
+    #[test]
+    fn top_level_name_js_scoped_package() {
+        assert_eq!(top_level_package_name("typescript", "@types/d3-hierarchy"), "@types/d3-hierarchy");
+        assert_eq!(top_level_package_name("typescript", "@types/d3-hierarchy/extra"), "@types/d3-hierarchy");
     }
 
     #[test]
@@ -342,5 +412,35 @@ const mod = await import('./lazy');
     fn does_not_resolve_absolute_python_import() {
         let known = HashSet::new();
         assert_eq!(resolve_relative_import("pkg/app.py", "myapp.utils", "python", &known), None);
+    }
+
+    #[test]
+    fn resolves_python_absolute_import_via_package_root() {
+        let mut known = HashSet::new();
+        known.insert("mapo_core/src/mapo_core/db.py");
+        known.insert("mapo_core/src/mapo_core/__init__.py");
+        let mut roots = HashMap::new();
+        roots.insert("mapo_core".to_string(), "mapo_core/src/mapo_core".to_string());
+
+        let resolved = resolve_python_absolute("mapo_core.db", &roots, &known);
+        assert_eq!(resolved.as_deref(), Some("mapo_core/src/mapo_core/db.py"));
+    }
+
+    #[test]
+    fn resolves_python_absolute_bare_package_to_init() {
+        let mut known = HashSet::new();
+        known.insert("mapo_core/src/mapo_core/__init__.py");
+        let mut roots = HashMap::new();
+        roots.insert("mapo_core".to_string(), "mapo_core/src/mapo_core".to_string());
+
+        let resolved = resolve_python_absolute("mapo_core", &roots, &known);
+        assert_eq!(resolved.as_deref(), Some("mapo_core/src/mapo_core/__init__.py"));
+    }
+
+    #[test]
+    fn does_not_resolve_unknown_top_level_package() {
+        let known = HashSet::new();
+        let roots = HashMap::new();
+        assert_eq!(resolve_python_absolute("numpy", &roots, &known), None);
     }
 }

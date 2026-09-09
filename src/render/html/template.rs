@@ -159,6 +159,15 @@ pub fn render(input: TemplateInput) -> String {
     pointer-events: none;
     user-select: none;
   }}
+  .ariadne-node, .ariadne-links path, .ariadne-ref-links path {{
+    transition: opacity 0.15s ease;
+  }}
+  .ariadne-node.ariadne-dimmed {{
+    opacity: 0.18;
+  }}
+  .ariadne-node.ariadne-focused .ariadne-node-box {{
+    filter: url(#focus-glow);
+  }}
 </style>
 </head>
 <body>
@@ -180,6 +189,16 @@ pub fn render(input: TemplateInput) -> String {
     <symbol id="icon-fit-screen" viewBox="0 0 24 24">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
+    <marker id="arrow-focus" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="{accent}"/>
+    </marker>
+    <filter id="focus-glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </svg>
   <div id="ariadne-controls">
     <span class="ariadne-title">{title}</span>

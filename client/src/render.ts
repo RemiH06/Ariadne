@@ -66,6 +66,7 @@ export class DiagramRenderer {
   private lastTree: TreeNode | null = null;
   private lastRefEdges: RefEdge[] = [];
   private showReferences = false;
+  private focusedId: string | null = null;
 
   constructor(svgEl: SVGSVGElement, config: RenderConfig, callbacks: RenderCallbacks) {
     this.svg = select(svgEl);
@@ -78,6 +79,19 @@ export class DiagramRenderer {
       this.viewport.attr("transform", event.transform.toString());
     });
     this.svg.call(this.zoomBehavior);
+
+    // Click en el fondo (no en un nodo): quita el focus actual.
+    this.svg.on("click", (event: MouseEvent) => {
+      if (event.target === svgEl) this.setFocusedNode(null);
+    });
+  }
+
+  /** Resalta las referencias directas (entrantes y salientes) de un nodo,
+   * atenuando el resto del diagrama. `null` quita el focus. Pasar el mismo
+   * id ya enfocado lo quita (toggle). */
+  setFocusedNode(id: string | null): void {
+    this.focusedId = this.focusedId === id ? null : id;
+    if (this.lastTree) this.render(this.lastTree, this.lastRefEdges);
   }
 
   setDirection(direction: LayoutMode): void {
@@ -125,9 +139,16 @@ export class DiagramRenderer {
       .data(nodes)
       .join("g")
       .attr("class", "ariadne-node")
-      .style("cursor", (d) => (d.data.children || (d.data.children === undefined && this.graphNode(d).metadata.child_count) ? "pointer" : "default"))
+      .style("cursor", "pointer")
       .on("click", (_event: MouseEvent, d: HierarchyNode<TreeNode>) => {
-        this.callbacks.onToggleCollapse(this.graphNode(d).id);
+        const node = this.graphNode(d);
+        if (this.hasChildren(d)) {
+          this.callbacks.onToggleCollapse(node.id);
+        } else {
+          // las hojas no tienen nada que colapsar — el click enfoca sus
+          // referencias directas (imports entrantes/salientes) en su lugar.
+          this.setFocusedNode(node.id);
+        }
       });
 
     // Paso 1: texto primero (sin caja aún) para poder medirlo con getBBox().
@@ -245,17 +266,38 @@ export class DiagramRenderer {
         .selectAll("path")
         .data(refEdges)
         .join("path")
-        .attr("d", (edge) => {
-          const source = positionById.get(edge.source);
-          const target = positionById.get(edge.target);
-          if (!source || !target) return "";
-          const dir = normalizeVec({ x: target.center.x - source.center.x, y: target.center.y - source.center.y });
-          const exitDist = boxExitDistance(source.geom, dir);
-          const entryDist = boxExitDistance(target.geom, dir);
-          const exit: Vec2 = { x: source.center.x + dir.x * exitDist, y: source.center.y + dir.y * exitDist };
-          const entry: Vec2 = { x: target.center.x - dir.x * entryDist, y: target.center.y - dir.y * entryDist };
-          return `M${exit.x},${exit.y} L${entry.x},${entry.y}`;
-        });
+        .attr("d", (edge) => this.refEdgePath(edge, positionById));
+    }
+
+    // Focus de nodo: resalta sus referencias directas (entrantes y
+    // salientes) con flechas dirigidas, atenuando el resto del diagrama.
+    if (this.focusedId) {
+      const related = refEdges.filter((e) => e.source === this.focusedId || e.target === this.focusedId);
+      const relatedIds = new Set<string>([this.focusedId]);
+      for (const e of related) {
+        relatedIds.add(e.source);
+        relatedIds.add(e.target);
+      }
+
+      nodeGroups
+        .classed("ariadne-dimmed", (d) => !relatedIds.has(this.graphNode(d).id))
+        .classed("ariadne-focused", (d) => this.graphNode(d).id === this.focusedId);
+      linkLayer.attr("opacity", 0.15);
+      this.viewport.select(".ariadne-ref-links").attr("opacity", 0.15);
+
+      const focusLayer = this.viewport
+        .append("g")
+        .attr("class", "ariadne-focus-links")
+        .attr("fill", "none")
+        .attr("stroke", this.config.html.colors.default)
+        .attr("stroke-width", 2)
+        .attr("marker-end", "url(#arrow-focus)");
+
+      focusLayer
+        .selectAll("path")
+        .data(related)
+        .join("path")
+        .attr("d", (edge) => this.refEdgePath(edge, positionById));
     }
 
     if (opts.refit) {
@@ -430,6 +472,10 @@ export class DiagramRenderer {
     return d.data.data;
   }
 
+  private hasChildren(d: HierarchyNode<TreeNode>): boolean {
+    return Boolean(d.data.children) || (d.data.children === undefined && Boolean(this.graphNode(d).metadata.child_count));
+  }
+
   /** Padding vertical extra para archivos, proporcional al área (raíz
    * cuadrada del conteo de líneas) — así la caja "se siente" más grande
    * cuanto más código tiene el archivo, sin dejar de contener el texto. */
@@ -443,6 +489,21 @@ export class DiagramRenderer {
 
   private hasIcon(node: GraphNode): boolean {
     return this.config.html.icons.enabled && !!node.metadata.icon_key;
+  }
+
+  /** Camino recto entre los bordes de dos cajas (no las de árbol, esas usan
+   * `pathFor` con la tangente compartida) — compartido entre la capa de
+   * "todas las referencias" y la de focus, que solo cambia el estilo. */
+  private refEdgePath(edge: RefEdge, positionById: Map<string, PositionedNode>): string {
+    const source = positionById.get(edge.source);
+    const target = positionById.get(edge.target);
+    if (!source || !target) return "";
+    const dir = normalizeVec({ x: target.center.x - source.center.x, y: target.center.y - source.center.y });
+    const exitDist = boxExitDistance(source.geom, dir);
+    const entryDist = boxExitDistance(target.geom, dir);
+    const exit: Vec2 = { x: source.center.x + dir.x * exitDist, y: source.center.y + dir.y * exitDist };
+    const entry: Vec2 = { x: target.center.x - dir.x * entryDist, y: target.center.y - dir.y * entryDist };
+    return `M${exit.x},${exit.y} L${entry.x},${entry.y}`;
   }
 
   /** El ícono de un archivo ya identifica su lenguaje, así que el color
