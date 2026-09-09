@@ -1,9 +1,12 @@
+use crate::config::ColorsConfig;
+
 pub struct TemplateInput<'a> {
     pub title: &'a str,
     pub background: &'a str,
     pub text_color: &'a str,
     pub link_color: &'a str,
     pub accent: &'a str,
+    pub colors: &'a ColorsConfig,
     pub icon_defs: &'a str,
     pub graph_json: &'a str,
     pub config_json: &'a str,
@@ -34,6 +37,7 @@ pub fn render(input: TemplateInput) -> String {
     let dir_btn_bottomtop = dir_button("bottom-top", 270, "De abajo hacia arriba", false);
     let dir_btn_bottomright = dir_button("from-bottomright", 225, "Diagonal desde abajo-derecha", false);
     let dir_btn_radial = radial_button();
+    let legend = legend_html(input.colors);
 
     format!(
         r##"<!doctype html>
@@ -81,6 +85,53 @@ pub fn render(input: TemplateInput) -> String {
     flex-direction: column;
     gap: 10px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+  }}
+  .ariadne-legend {{
+    display: flex;
+    gap: 18px;
+  }}
+  .ariadne-legend-group {{
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }}
+  .ariadne-legend-subtitle {{
+    font-size: 10px;
+    opacity: 0.55;
+  }}
+  .ariadne-legend-row {{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+  }}
+  .ariadne-legend-shape, .ariadne-legend-swatch {{
+    width: 13px;
+    height: 13px;
+    flex: 0 0 auto;
+    background: var(--ariadne-link);
+  }}
+  .ariadne-legend-swatch {{
+    border-radius: 3px;
+  }}
+  .ariadne-legend-circle {{ border-radius: 50%; }}
+  .ariadne-legend-diamond {{ clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); }}
+  .ariadne-legend-triangle {{ clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }}
+  .ariadne-legend-pentagon {{ clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%); }}
+  .ariadne-legend-octagon {{ clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }}
+  .ariadne-legend-folder {{ clip-path: polygon(0% 20%, 42% 20%, 52% 2%, 100% 2%, 100% 100%, 0% 100%); }}
+  .ariadne-legend-book {{ position: relative; border-radius: 2px; }}
+  .ariadne-legend-book::after {{
+    content: "";
+    position: absolute;
+    left: 32%;
+    top: 15%;
+    bottom: 15%;
+    width: 1.5px;
+    background: rgba(0, 0, 0, 0.4);
+    box-shadow: 3px 0 0 rgba(0, 0, 0, 0.4);
   }}
   #ariadne-controls .ariadne-title {{
     font-size: 14px;
@@ -231,6 +282,8 @@ pub fn render(input: TemplateInput) -> String {
       <label>Ocultar extensiones <input type="text" id="ariadne-filter-hide-ext" placeholder=".lock,.min.js" /></label>
       <label><input type="checkbox" id="ariadne-filter-show-refs" /> Mostrar referencias entre archivos</label>
     </div>
+
+{legend}
   </div>
 </div>
 <script type="application/json" id="ariadne-graph-data">{graph_json}</script>
@@ -246,6 +299,53 @@ fn dir_button(direction: &str, angle: u16, title: &str, active: bool) -> String 
     let active_class = if active { " active" } else { "" };
     format!(
         r##"<button data-direction="{direction}" title="{title}" class="ariadne-btn{active_class}"><svg class="ariadne-dir-icon" viewBox="0 0 24 24"><use href="#icon-dir-arrow" transform="rotate({angle} 12 12)"/></svg></button>"##
+    )
+}
+
+/// Leyenda de formas (qué tipo/formato de nodo es cada silueta) y colores
+/// (qué categoría de archivo representa cada uno) — las dos son ejes
+/// independientes (ver `client/src/render.ts`: `shapeFor`/`colorFor`), así
+/// que se muestran como dos grupos separados. Se arma en el servidor
+/// (no en el cliente) porque los colores configurados ya se conocen acá,
+/// sin duplicar la lógica de dibujo de figuras del cliente.
+fn legend_html(colors: &ColorsConfig) -> String {
+    format!(
+        r##"    <div class="ariadne-section">
+      <span class="ariadne-section-title">Leyenda</span>
+      <div class="ariadne-legend">
+        <div class="ariadne-legend-group">
+          <span class="ariadne-legend-subtitle">Forma</span>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-folder" style="background:{directory}"></span> Carpeta</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-book" style="background:{library}"></span> Librería</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-circle"></span> Archivo</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-diamond"></span> Datos</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-triangle"></span> Imagen</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-pentagon"></span> Texto plano</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-octagon"></span> Markup/docs</div>
+        </div>
+        <div class="ariadne-legend-group">
+          <span class="ariadne-legend-subtitle">Color</span>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{file}"></span> Código fuente</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{directory}"></span> Carpeta</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{library}"></span> Librería</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{test}"></span> Test</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{config}"></span> Config</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{docs}"></span> Docs</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{styles}"></span> Estilos</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{markup}"></span> Markup</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{script}"></span> Script</div>
+        </div>
+      </div>
+    </div>"##,
+        file = colors.file,
+        directory = colors.directory,
+        library = colors.library,
+        test = colors.test,
+        config = colors.config,
+        docs = colors.docs,
+        styles = colors.styles,
+        markup = colors.markup,
+        script = colors.script,
     )
 }
 

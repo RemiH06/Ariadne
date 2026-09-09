@@ -7,35 +7,25 @@ import { DIRECTION_VECTORS, type LayoutMode, type Vec2 } from "./layout.js";
 import type { GraphNode, RenderConfig, TreeNode } from "./types.js";
 
 const LINE_COUNT_CAP = 2000; // debe coincidir con extractor::classify::LINE_COUNT_CAP
+const NODE_SCALE = 2; // factor de tamaño de todos los nodos (íconos, texto, padding, figuras) — no toca la separación entre ellos
 const LEVEL_GAP = 90; // separación extra entre niveles/anillos
-const ICON_SIZE = 16;
-const PADDING_X = 12;
-const MIN_BOX_HEIGHT = 24;
-const BASE_PADDING_Y = 6;
-const MAX_EXTRA_PADDING_Y = 14; // padding vertical extra para archivos grandes (hasta LINE_COUNT_CAP)
-const MAX_LABEL_WIDTH = 200; // un solo label larguísimo no debe inflar el espaciado de las 8 orientaciones
+const ICON_SIZE = 16 * NODE_SCALE;
+const PADDING_X = 12 * NODE_SCALE;
+const MIN_BOX_HEIGHT = 24 * NODE_SCALE;
+const BASE_PADDING_Y = 6 * NODE_SCALE;
+const MAX_EXTRA_PADDING_Y = 14 * NODE_SCALE; // padding vertical extra para archivos grandes (hasta LINE_COUNT_CAP)
+const MAX_LABEL_WIDTH = 200 * NODE_SCALE; // un solo label larguísimo no debe inflar el espaciado de las 8 orientaciones
+const FONT_SIZE = 13 * NODE_SCALE;
 const RADIAL_SEPARATION_SCALE = 2.2; // ajuste empírico para que los anillos internos no se amontonen
 const SUB_LANE_GAP = 16; // separación entre sub-filas dentro de un mismo nivel (menor que LEVEL_GAP)
 const SIBLING_FLOW_GAP = 14; // separación entre cajas consecutivas dentro de una sub-fila
 const BAND_USAGE_FRACTION = 0.97; // % del ancho/alto de pantalla que puede usar cada franja antes de saltar de fila
-const CENTERED_INNER_PAD_X = 10;
-const CENTERED_INNER_PAD_Y = 8;
-const ICON_TEXT_GAP = 4; // separación ícono/texto en el layout centrado (vertical, no el de fila)
+const CENTERED_INNER_PAD_Y = 8 * NODE_SCALE;
+const ICON_TEXT_GAP = 4 * NODE_SCALE; // separación ícono/texto en el layout centrado (vertical, no el de fila)
 const SHAPE_SIZE_GROWTH = 0.7; // crecimiento máximo (fracción) por tamaño de archivo, en figuras centradas
-
-/** Cuánto más grande que el bloque de contenido (ícono+texto) tiene que ser
- * cada figura para contenerlo con margen razonable — un rombo/triángulo
- * necesita mucho más margen que un octágono (casi un rectángulo) porque
- * desperdician más área cerca de sus puntas. Ajustado a ojo, no es
- * geometría exacta: son insignias de diagrama, no tipografía de precisión. */
-const SHAPE_INFLATION: Record<string, { w: number; h: number }> = {
-  circle: { w: 1.5, h: 1.5 },
-  hexagon: { w: 1.3, h: 1.3 },
-  diamond: { w: 2.0, h: 2.0 },
-  triangle: { w: 2.3, h: 2.7 },
-  pentagon: { w: 1.55, h: 1.6 },
-  octagon: { w: 1.3, h: 1.3 },
-};
+const REGULAR_SHAPE_MARGIN = 1.15; // margen del radio sobre el contenido — el texto puede salirse, esto es solo para que el ícono no quede pegado al borde
+const OVERFLOW_RESERVE = 16 * NODE_SCALE; // margen extra que el layout reserva alrededor de una etiqueta que se sale de su figura, para que no toque al vecino
+const TEXT_HALO_WIDTH = 3 * NODE_SCALE;
 
 interface BoxGeom {
   width: number;
@@ -44,30 +34,37 @@ interface BoxGeom {
    * texto/ícono se corren hacia abajo esta distancia/2 para quedar
    * centrados en el cuerpo, no en la pestaña. */
   tabHeight: number;
-  /** Alto del bloque ícono+texto sin inflar por la forma (0 para "rect"/
-   * "folder", que no lo usan) — sirve para centrar ese bloque dentro de las
-   * formas "centradas" (círculo, hexágono, rombo, etc.). */
+  /** Alto del bloque ícono+texto (0 para "folder"/"book", que no lo
+   * usan) — sirve para centrar ese bloque dentro de las figuras "centradas"
+   * (círculo, hexágono, rombo, etc.), donde el texto puede salirse de la
+   * figura sin problema. */
   contentHeight: number;
+  /** Radio (circunradio) de la figura, solo para formas centradas — hace
+   * falta guardarlo aparte de width/height porque un polígono regular no
+   * tiene por qué medir exactamente 2*radio de alto (p. ej. un triángulo
+   * mide 1.5*radio), y hay que volver a generar los mismos puntos al dibujar. */
+  radius: number;
 }
 
-type ShapeKind = "rect" | "folder" | "circle" | "hexagon" | "diamond" | "triangle" | "pentagon" | "octagon";
+type ShapeKind = "book" | "folder" | "circle" | "hexagon" | "diamond" | "triangle" | "pentagon" | "octagon";
 
 /** root y directory son conceptualmente "contenedores", así que comparten
  * la silueta de carpeta; library (dependencia externa, no viene del disco)
- * y los tipos reservados sin uso real todavía (object/attribute/method)
- * usan un rectángulo simple; class (reservado) ya tiene forma asignada
- * (hexágono) aunque todavía no se emitan nodos de ese tipo. */
+ * se dibuja como un "libro" (rectángulo con lomo) para distinguirla de los
+ * archivos; los tipos reservados sin uso real todavía (object/attribute/
+ * method) caen al círculo genérico; class (reservado) ya tiene forma
+ * asignada (hexágono) aunque todavía no se emitan nodos de ese tipo. */
 const NODE_TYPE_SHAPE: Partial<Record<GraphNode["node_type"], ShapeKind>> = {
   root: "folder",
   directory: "folder",
-  library: "rect",
+  library: "book",
   class: "hexagon",
 };
 
 /** Para archivos: la familia visual por formato (`metadata.shape`, ver
  * extractor::classify::file_shape en Rust) decide la forma; sin ella, un
- * archivo es un círculo por defecto — distinto del rectángulo de carpetas/
- * librerías, para diferenciar visualmente archivos del mismo color. */
+ * archivo es un círculo por defecto — distinto de la carpeta/libro, para
+ * diferenciar visualmente archivos del mismo color. */
 const FILE_SHAPE_BY_METADATA: Record<string, ShapeKind> = {
   data: "diamond",
   image: "triangle",
@@ -82,15 +79,28 @@ function shapeFor(node: GraphNode): ShapeKind {
     const metaShape = node.metadata.shape;
     return (metaShape && FILE_SHAPE_BY_METADATA[metaShape]) || "circle";
   }
-  return "rect";
+  return "circle";
 }
 
-/** "rect"/"folder" usan el layout de fila (ícono a la izquierda, texto a la
+/** Cantidad de lados y rotación (grados) de cada figura regular — todas
+ * inscritas en el mismo circunradio, así que el "peso" visual es
+ * consistente entre ellas. La rotación decide la orientación (vértice vs.
+ * arista arriba): hexágono y octágono quedan con arista plana arriba/abajo,
+ * rombo/triángulo/pentágono quedan apuntando hacia arriba. */
+const REGULAR_SHAPE_SPEC: Partial<Record<ShapeKind, { sides: number; rotationDeg: number }>> = {
+  diamond: { sides: 4, rotationDeg: -90 },
+  triangle: { sides: 3, rotationDeg: -90 },
+  pentagon: { sides: 5, rotationDeg: -90 },
+  hexagon: { sides: 6, rotationDeg: 0 },
+  octagon: { sides: 8, rotationDeg: 22.5 },
+};
+
+/** "folder"/"book" usan el layout de fila (ícono a la izquierda, texto a la
  * derecha, todo alineado a la izquierda de la caja) — el resto usa un
  * layout centrado (ícono arriba, texto abajo, todo centrado) porque una
  * fila angosta no se ve bien inscrita en un círculo/hexágono/rombo/etc. */
 function isRowShape(kind: ShapeKind): boolean {
-  return kind === "rect" || kind === "folder";
+  return kind === "book" || kind === "folder";
 }
 
 interface PositionedNode {
@@ -206,7 +216,7 @@ export class DiagramRenderer {
       .append("text")
       .attr("class", "ariadne-node-label")
       .attr("dy", "0.32em")
-      .style("font", "13px system-ui, sans-serif")
+      .style("font", `${FONT_SIZE}px system-ui, sans-serif`)
       .text((d) => this.graphNode(d).label);
 
     // Truncar con elipsis las etiquetas larguísimas: sin esto, un solo
@@ -234,32 +244,47 @@ export class DiagramRenderer {
         const iconGap = hasIcon ? ICON_SIZE + 6 : 0;
         const paddingY = BASE_PADDING_Y + this.extraPaddingFor(node);
         const bodyHeight = Math.max(MIN_BOX_HEIGHT, bbox.height + paddingY * 2);
-        const tabHeight = kind === "folder" ? Math.min(bodyHeight * 0.4, 10) : 0;
+        const tabHeight = kind === "folder" ? Math.min(bodyHeight * 0.4, 10 * NODE_SCALE) : 0;
         geomById.set(node.id, {
           width: PADDING_X * 2 + iconGap + bbox.width,
           height: bodyHeight + tabHeight,
           tabHeight,
           contentHeight: 0,
+          radius: 0,
         });
         return;
       }
 
-      // Figuras centradas: ícono arriba, texto abajo, todo centrado, con el
-      // tamaño creciendo con el conteo de líneas del archivo (hasta el tope)
-      // para que la diferencia de tamaño entre archivos sea visualmente
-      // obvia, no solo un padding sutil.
-      const contentWidth = Math.max(bbox.width, hasIcon ? ICON_SIZE : 0);
+      // Figuras centradas y regulares: ícono arriba, texto abajo, todo
+      // centrado. El tamaño (circunradio) sale del alto del contenido —
+      // nunca de su ancho, que puede salirse de la figura sin problema — y
+      // crece con el conteo de líneas del archivo (hasta el tope) para que
+      // la diferencia de tamaño entre archivos sea visualmente obvia.
       const contentHeight = bbox.height + (hasIcon ? ICON_SIZE + ICON_TEXT_GAP : 0);
-      const baseWidth = contentWidth + CENTERED_INNER_PAD_X * 2;
-      const baseHeight = Math.max(MIN_BOX_HEIGHT, contentHeight + CENTERED_INNER_PAD_Y * 2);
+      const baseDiameter = Math.max(contentHeight + CENTERED_INNER_PAD_Y * 2, MIN_BOX_HEIGHT);
       const growth = 1 + this.sizeScaleT(node) * SHAPE_SIZE_GROWTH;
-      const inflation = SHAPE_INFLATION[kind];
-      geomById.set(node.id, {
-        width: baseWidth * growth * inflation.w,
-        height: baseHeight * growth * inflation.h,
-        tabHeight: 0,
-        contentHeight,
-      });
+      const radius = (baseDiameter / 2) * growth * REGULAR_SHAPE_MARGIN;
+
+      let shapeWidth: number;
+      let shapeHeight: number;
+      if (kind === "circle") {
+        shapeWidth = shapeHeight = radius * 2;
+      } else {
+        const spec = REGULAR_SHAPE_SPEC[kind]!;
+        const poly = regularPolygonExtent(spec.sides, radius, spec.rotationDeg);
+        shapeWidth = poly.width;
+        shapeHeight = poly.height;
+      }
+
+      // El texto puede salirse de la figura (a propósito), pero el espacio
+      // que el layout reserva para el nodo (width/height, usado para
+      // separar hermanos y niveles) sí tiene que ser al menos tan ancho
+      // como la etiqueta — si no, un nodo vecino queda lo bastante cerca
+      // como para taparle la parte que sobresale. La figura que se dibuja
+      // (radius) no cambia, solo el espacio reservado alrededor.
+      const width = Math.max(shapeWidth, bbox.width + OVERFLOW_RESERVE);
+      const height = Math.max(shapeHeight, contentHeight);
+      geomById.set(node.id, { width, height, tabHeight: 0, contentHeight, radius });
     });
 
     const { positioned, links, pathFor } =
@@ -275,8 +300,8 @@ export class DiagramRenderer {
       return `translate(${p.center.x},${p.center.y})`;
     });
 
-    // Paso 2: la forma (carpeta, rect, o una figura centrada), insertada
-    // detrás del texto.
+    // Paso 2: la forma (carpeta, libro, círculo, o un polígono regular),
+    // insertada detrás del texto.
     nodeGroups.each((d, i, groups) => {
       const node = this.graphNode(d);
       const geom = geomById.get(node.id)!;
@@ -287,29 +312,47 @@ export class DiagramRenderer {
         shape = group
           .insert("path", "text")
           .attr("d", folderShapePath(geom.width, geom.height, geom.tabHeight)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
-      } else if (kind === "rect") {
+      } else if (kind === "book") {
         shape = group
           .insert("rect", "text")
           .attr("x", -geom.width / 2)
           .attr("y", -geom.height / 2)
           .attr("width", geom.width)
           .attr("height", geom.height)
-          .attr("rx", 6) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+          .attr("rx", 4 * NODE_SCALE) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
       } else if (kind === "circle") {
         shape = group
           .insert("ellipse", "text")
-          .attr("rx", geom.width / 2)
-          .attr("ry", geom.height / 2) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+          .attr("rx", geom.radius)
+          .attr("ry", geom.radius) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
       } else {
+        const spec = REGULAR_SHAPE_SPEC[kind]!;
         shape = group
           .insert("polygon", "text")
-          .attr("points", polygonPoints(kind, geom.width, geom.height)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
+          .attr("points", regularPolygonPoints(spec.sides, geom.radius, spec.rotationDeg)) as unknown as Selection<SVGGraphicsElement, unknown, null, undefined>;
       }
       shape
         .attr("class", "ariadne-node-box")
         .attr("fill", this.colorFor(node))
         .attr("stroke", this.config.html.background)
-        .attr("stroke-width", 1.5);
+        .attr("stroke-width", 1.5 * NODE_SCALE);
+
+      // El "lomo" del libro: un par de líneas verticales cerca del borde
+      // izquierdo, para distinguir de un archivo/rectángulo cualquiera.
+      if (kind === "book") {
+        const spineStroke = contrastTextColor(this.colorFor(node));
+        for (const frac of [0.16, 0.24]) {
+          group
+            .insert("line", "text")
+            .attr("x1", -geom.width / 2 + geom.width * frac)
+            .attr("x2", -geom.width / 2 + geom.width * frac)
+            .attr("y1", -geom.height / 2 + 3 * NODE_SCALE)
+            .attr("y2", geom.height / 2 - 3 * NODE_SCALE)
+            .attr("stroke", spineStroke)
+            .attr("stroke-width", 1.2 * NODE_SCALE)
+            .attr("opacity", 0.45);
+        }
+      }
     });
 
     textSel
@@ -335,7 +378,24 @@ export class DiagramRenderer {
         const textHeight = geom.contentHeight - iconBlock;
         return textTop + textHeight / 2;
       })
-      .attr("fill", (d) => contrastTextColor(this.colorFor(this.graphNode(d))));
+      // El texto puede salirse de las figuras centradas (círculo, hexágono,
+      // rombo, etc. — a propósito, para no forzar el tamaño de la figura a
+      // la longitud del label) y terminar sobre el fondo de la página en
+      // vez de sobre el color del nodo. `mix-blend-mode: difference` se
+      // probó primero para invertir el color automáticamente, pero en SVG
+      // cada `<g>` transformado arma su propio grupo de blending aislado:
+      // el texto solo invierte contra su propia figura/ícono, y en cuanto
+      // sale de ese grupo (fondo de página) deja de haber nada contra qué
+      // invertir — se vuelve blanco liso, invisible sobre un tema claro.
+      // En su lugar: color de texto fijo (el del tema, ya pensado para
+      // contrastar con el fondo) más un halo — un stroke grueso del color
+      // de fondo pintado detrás del fill — así el texto se lee igual de
+      // bien sobre la figura que sobre la página, sin depender de blending.
+      .attr("fill", this.config.html.text_color)
+      .attr("stroke", this.config.html.background)
+      .attr("stroke-width", TEXT_HALO_WIDTH)
+      .style("paint-order", "stroke")
+      .style("stroke-linejoin", "round");
 
     nodeGroups
       .filter((d) => this.hasIcon(this.graphNode(d)))
@@ -668,7 +728,7 @@ export class DiagramRenderer {
  * centrada en el origen como el resto de las formas. `tabHeight` viene del
  * mismo cálculo que ya infló el `height` del BoxGeom. */
 function folderShapePath(width: number, height: number, tabHeight: number): string {
-  const tabWidth = Math.min(width * 0.4, 40);
+  const tabWidth = Math.min(width * 0.4, 40 * NODE_SCALE);
   const left = -width / 2;
   const right = width / 2;
   const top = -height / 2;
@@ -693,71 +753,43 @@ function folderShapePath(width: number, height: number, tabHeight: number): stri
  * No son polígonos regulares: están ajustados para dejar espacio razonable
  * al contenido centrado (ícono+texto) que llevan encima, no para precisión
  * geométrica. */
-function polygonPoints(kind: ShapeKind, width: number, height: number): string {
-  const hw = width / 2;
-  const hh = height / 2;
-  let pts: Array<[number, number]>;
-  switch (kind) {
-    case "hexagon": {
-      const cut = hw * 0.5;
-      pts = [
-        [-hw + cut, -hh],
-        [hw - cut, -hh],
-        [hw, 0],
-        [hw - cut, hh],
-        [-hw + cut, hh],
-        [-hw, 0],
-      ];
-      break;
-    }
-    case "diamond":
-      pts = [
-        [0, -hh],
-        [hw, 0],
-        [0, hh],
-        [-hw, 0],
-      ];
-      break;
-    case "triangle":
-      pts = [
-        [0, -hh],
-        [hw, hh],
-        [-hw, hh],
-      ];
-      break;
-    case "pentagon":
-      pts = [
-        [0, -hh],
-        [hw, -hh * 0.3],
-        [hw * 0.7, hh],
-        [-hw * 0.7, hh],
-        [-hw, -hh * 0.3],
-      ];
-      break;
-    case "octagon": {
-      const cutX = hw * 0.58;
-      const cutY = hh * 0.58;
-      pts = [
-        [-hw + cutX, -hh],
-        [hw - cutX, -hh],
-        [hw, -hh + cutY],
-        [hw, hh - cutY],
-        [hw - cutX, hh],
-        [-hw + cutX, hh],
-        [-hw, hh - cutY],
-        [-hw, -hh + cutY],
-      ];
-      break;
-    }
-    default:
-      pts = [
-        [-hw, -hh],
-        [hw, -hh],
-        [hw, hh],
-        [-hw, hh],
-      ];
+/** Vértices de un polígono regular de `sides` lados, circunradio `radius`,
+ * centrado en el origen — `rotationDeg` decide qué vértice queda arriba
+ * (-90 = un vértice apunta arriba; 0 = arista horizontal arriba/abajo). */
+function regularPolygonVertices(sides: number, radius: number, rotationDeg: number): Array<[number, number]> {
+  const rotation = (rotationDeg * Math.PI) / 180;
+  const step = (2 * Math.PI) / sides;
+  const verts: Array<[number, number]> = [];
+  for (let k = 0; k < sides; k++) {
+    const angle = rotation + k * step;
+    verts.push([radius * Math.cos(angle), radius * Math.sin(angle)]);
   }
-  return pts.map(([x, y]) => `${x},${y}`).join(" ");
+  return verts;
+}
+
+function regularPolygonPoints(sides: number, radius: number, rotationDeg: number): string {
+  return regularPolygonVertices(sides, radius, rotationDeg)
+    .map(([x, y]) => `${x},${y}`)
+    .join(" ");
+}
+
+/** Caja delimitadora real de un polígono regular — no siempre mide
+ * 2*radius de alto/ancho (un triángulo apuntando arriba, por ejemplo, mide
+ * 1.5*radio de alto), y el layout necesita el tamaño real para el
+ * espaciado entre nodos. */
+function regularPolygonExtent(sides: number, radius: number, rotationDeg: number): { width: number; height: number } {
+  const verts = regularPolygonVertices(sides, radius, rotationDeg);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of verts) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  return { width: maxX - minX, height: maxY - minY };
 }
 
 /** Recorta `label` con "…" hasta que quepa en `maxWidth`, midiendo con

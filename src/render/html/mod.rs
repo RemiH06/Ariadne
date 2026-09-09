@@ -40,6 +40,7 @@ pub fn render_html(
         text_color: &html_cfg.text_color,
         link_color: &html_cfg.link_color,
         accent: &html_cfg.colors.default,
+        colors: &html_cfg.colors,
         icon_defs,
         graph_json: &graph_json,
         config_json: &config_json,
