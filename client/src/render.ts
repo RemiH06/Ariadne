@@ -8,7 +8,7 @@ import "d3-transition";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
 import type { RefEdge } from "./data.js";
 import { DIRECTION_VECTORS, type LayoutMode, type Vec2 } from "./layout.js";
-import type { GraphNode, RenderConfig, TreeNode } from "./types.js";
+import type { Graph, GraphNode, RenderConfig, TreeNode } from "./types.js";
 
 const LINE_COUNT_CAP = 2000; // debe coincidir con extractor::classify::LINE_COUNT_CAP
 const NODE_SCALE = 2; // factor de tamaño de todos los nodos (íconos, texto, padding, figuras) — no toca la separación entre ellos
@@ -127,6 +127,9 @@ interface PositionedNode {
 
 export interface RenderCallbacks {
   onToggleCollapse: (nodeId: string) => void;
+  /** Se dispara al enfocar/desenfocar un nodo (click en una hoja, o click
+   * en el fondo/el mismo nodo para quitar el focus) — `null` al desenfocar. */
+  onFocusChange?: (node: GraphNode | null) => void;
 }
 
 export class DiagramRenderer {
@@ -140,6 +143,12 @@ export class DiagramRenderer {
   private lastRefEdges: RefEdge[] = [];
   private showReferences = false;
   private focusedId: string | null = null;
+  private graph: Graph | null = null;
+  private colorByAge = false;
+  /** Rango de fechas (`Date.parse`) entre todos los nodos con
+   * `last_modified` — calculado una sola vez en `setGraph`, no en cada
+   * render filtrado, para que el rango no salte al cambiar filtros. */
+  private ageRange: { oldest: number; newest: number } | null = null;
   /** Centro de cada nodo en el render anterior, por id — permite animar de
    * la posición vieja a la nueva en vez de saltar de golpe, y decidir de
    * dónde "aparece" un nodo que no existía antes (desde su padre). Vacío
@@ -169,6 +178,31 @@ export class DiagramRenderer {
    * id ya enfocado lo quita (toggle). */
   setFocusedNode(id: string | null): void {
     this.focusedId = this.focusedId === id ? null : id;
+    const focusedNode = this.focusedId && this.graph ? (this.graph.nodes.find((n) => n.id === this.focusedId) ?? null) : null;
+    this.callbacks.onFocusChange?.(focusedNode);
+    if (this.lastTree) this.render(this.lastTree, this.lastRefEdges);
+  }
+
+  /** Debe llamarse una vez con el `Graph` completo (no el árbol filtrado)
+   * antes del primer render — calcula el rango de fechas para "colorear
+   * por antigüedad" y guarda una referencia para resolver el nodo enfocado
+   * por id en `setFocusedNode`. */
+  setGraph(graph: Graph): void {
+    this.graph = graph;
+    let oldest = Infinity;
+    let newest = -Infinity;
+    for (const node of graph.nodes) {
+      if (!node.metadata.last_modified) continue;
+      const ts = Date.parse(node.metadata.last_modified);
+      if (Number.isNaN(ts)) continue;
+      if (ts < oldest) oldest = ts;
+      if (ts > newest) newest = ts;
+    }
+    this.ageRange = Number.isFinite(oldest) && Number.isFinite(newest) ? { oldest, newest } : null;
+  }
+
+  setColorByAge(enabled: boolean): void {
+    this.colorByAge = enabled;
     if (this.lastTree) this.render(this.lastTree, this.lastRefEdges);
   }
 
@@ -919,8 +953,22 @@ export class DiagramRenderer {
   private colorFor(node: GraphNode): string {
     const colors = this.config.html.colors as unknown as Record<string, string>;
     const category = node.metadata.category;
-    if (category && colors[category]) return colors[category];
-    return colors[node.node_type] ?? colors.default;
+    const base = category && colors[category] ? colors[category] : (colors[node.node_type] ?? colors.default);
+    return this.applyAgeTint(base, node);
+  }
+
+  /** "Colorear por antigüedad": aclara el color base (en HSL, no un canal
+   * aparte) proporcional a qué tan viejo es el último commit del nodo,
+   * relativo al rango de fechas de todo el grafo — más claro = más viejo.
+   * Sin dato de fecha, o con el toggle apagado, devuelve el color tal cual. */
+  private applyAgeTint(base: string, node: GraphNode): string {
+    if (!this.colorByAge || !this.ageRange || !node.metadata.last_modified) return base;
+    const ts = Date.parse(node.metadata.last_modified);
+    if (Number.isNaN(ts)) return base;
+    const { oldest, newest } = this.ageRange;
+    if (oldest === newest) return base;
+    const ageT = clamp((newest - ts) / (newest - oldest), 0, 1);
+    return lightenHex(base, ageT * MAX_AGE_LIGHTEN);
   }
 
   private fitToViewport(positioned: PositionedNode[]): void {
@@ -1021,8 +1069,9 @@ function regularPolygonExtent(sides: number, radius: number, rotationDeg: number
 }
 
 /** Fecha RFC3339 -> texto relativo en español ("hace 3 días") para el
- * tooltip de último commit — evita mostrar un ISO crudo poco legible. */
-function formatRelativeDate(iso: string): string {
+ * tooltip de último commit — evita mostrar un ISO crudo poco legible.
+ * Exportada porque `main.ts` la reusa para el panel de "ver historial". */
+export function formatRelativeDate(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return iso;
   const days = Math.floor((Date.now() - then) / 86_400_000);
@@ -1033,6 +1082,66 @@ function formatRelativeDate(iso: string): string {
   if (months < 12) return months === 1 ? "hace 1 mes" : `hace ${months} meses`;
   const years = Math.floor(days / 365);
   return years === 1 ? "hace 1 año" : `hace ${years} años`;
+}
+
+const MAX_AGE_LIGHTEN = 0.35; // fracción máxima que se suma a la luminosidad (HSL) del archivo más viejo
+const MAX_LIGHTNESS = 0.92; // tope para no llegar a blanco puro con el archivo más viejo del grafo
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Aclara `hex` sumándole `amount` a su luminosidad HSL (con tope
+ * `MAX_LIGHTNESS`) — usado por "colorear por antigüedad" para derivar un
+ * tono más claro del color de categoría existente, sin hardcodear una
+ * rampa de colores por paleta. Devuelve `hex` tal cual si no es un hex
+ * `#rrggbb` válido. */
+function lightenHex(hex: string, amount: number): string {
+  const hsl = hexToHsl(hex);
+  if (!hsl) return hex;
+  return hslToHex(hsl.h, hsl.s, Math.min(MAX_LIGHTNESS, hsl.l + amount));
+}
+
+function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  const r = parseInt(match[1].slice(0, 2), 16) / 255;
+  const g = parseInt(match[1].slice(2, 4), 16) / 255;
+  const b = parseInt(match[1].slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return { h: h / 6, s, l };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const toHex = (v: number) =>
+    Math.round(clamp(v, 0, 1) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  if (s === 0) {
+    const v = toHex(l);
+    return `#${v}${v}${v}`;
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hueToChannel = (t0: number): number => {
+    let t = t0;
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return `#${toHex(hueToChannel(h + 1 / 3))}${toHex(hueToChannel(h))}${toHex(hueToChannel(h - 1 / 3))}`;
 }
 
 /** Recorta `label` con "…" hasta que quepa en `maxWidth`, midiendo con

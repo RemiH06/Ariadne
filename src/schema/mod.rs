@@ -25,6 +25,18 @@ pub enum EdgeType {
     DependsOn,
 }
 
+/// Un commit del historial corto embebido para "ver historial" — ver
+/// extractor::git_blame. No es el historial completo, solo los últimos
+/// N commits que tocaron el archivo (N decidido al generar el grafo).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CommitInfo {
+    pub short_hash: String,
+    pub author: String,
+    /// RFC3339.
+    pub timestamp: String,
+    pub subject: String,
+}
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct NodeMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,6 +78,11 @@ pub struct NodeMetadata {
     /// archivo modificado más recientemente en ese subárbol).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_modified: Option<String>,
+    /// Últimos commits que tocaron este archivo, más reciente primero — ver
+    /// `CommitInfo`. Solo se puebla para nodos `File` (no carpetas/raíz);
+    /// alimenta la acción "ver historial" al seleccionar un nodo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_commits: Option<Vec<CommitInfo>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

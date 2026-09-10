@@ -1,8 +1,50 @@
 import { buildFilteredTree, collectVisibleIds, getVisibleReferenceEdges, readEmbeddedJson, type FilterState } from "./data.js";
 import { initFilterControls } from "./filters-ui.js";
 import { LAYOUT_MODES, type LayoutMode } from "./layout.js";
-import { DiagramRenderer } from "./render.js";
-import type { Graph, RenderConfig } from "./types.js";
+import { DiagramRenderer, formatRelativeDate } from "./render.js";
+import type { Graph, GraphNode, RenderConfig } from "./types.js";
+
+/** Muestra/oculta la sección "Nodo seleccionado" del panel según el focus
+ * actual, y arma la lista de "ver historial" (vacía hasta el primer click,
+ * después queda cacheada en el DOM). */
+function updateSelectionPanel(node: GraphNode | null): void {
+  const section = document.getElementById("ariadne-selection-section");
+  const label = document.getElementById("ariadne-selection-label");
+  const historyBtn = document.getElementById("ariadne-history-btn") as HTMLButtonElement | null;
+  const historyList = document.getElementById("ariadne-history-list");
+  if (!section || !label || !historyBtn || !historyList) return;
+
+  historyList.hidden = true;
+  historyList.replaceChildren();
+
+  if (!node) {
+    section.hidden = true;
+    return;
+  }
+
+  section.hidden = false;
+  label.textContent = node.label;
+
+  const commits = node.metadata.recent_commits ?? [];
+  historyBtn.hidden = commits.length === 0;
+  historyBtn.onclick = () => {
+    historyList.hidden = !historyList.hidden;
+    if (!historyList.hidden && historyList.childElementCount === 0) {
+      for (const commit of commits) {
+        const row = document.createElement("div");
+        row.className = "ariadne-history-row";
+        const meta = document.createElement("div");
+        meta.className = "ariadne-history-meta";
+        meta.textContent = `${commit.author} · ${formatRelativeDate(commit.timestamp)} · ${commit.short_hash}`;
+        const subject = document.createElement("div");
+        subject.className = "ariadne-history-subject";
+        subject.textContent = commit.subject;
+        row.append(meta, subject);
+        historyList.appendChild(row);
+      }
+    }
+  };
+}
 
 function main(): void {
   const graph = readEmbeddedJson<Graph>("ariadne-graph-data");
@@ -26,7 +68,9 @@ function main(): void {
       else collapsed.add(nodeId);
       rerender();
     },
+    onFocusChange: updateSelectionPanel,
   });
+  renderer.setGraph(graph);
 
   let hasRenderedOnce = false;
   function rerender(): void {
@@ -72,6 +116,11 @@ function main(): void {
   const showRefsInput = document.getElementById("ariadne-filter-show-refs") as HTMLInputElement | null;
   showRefsInput?.addEventListener("change", () => {
     renderer.setShowReferences(showRefsInput.checked);
+  });
+
+  const colorByAgeInput = document.getElementById("ariadne-filter-color-by-age") as HTMLInputElement | null;
+  colorByAgeInput?.addEventListener("change", () => {
+    renderer.setColorByAge(colorByAgeInput.checked);
   });
 
   const directionButtons = document.querySelectorAll<HTMLButtonElement>("[data-direction]");

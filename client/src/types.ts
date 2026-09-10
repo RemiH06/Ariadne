@@ -34,7 +34,19 @@ export interface NodeMetadata {
   last_author?: string;
   /** Fecha RFC3339 del último commit — ver `last_author`. */
   last_modified?: string;
+  /** Últimos commits que tocaron este archivo, más reciente primero. Solo
+   * en nodos `file` — alimenta la acción "ver historial" al seleccionarlo. */
+  recent_commits?: CommitInfo[];
   [key: string]: unknown;
+}
+
+/** Un commit del historial corto embebido — ver `NodeMetadata.recent_commits`. */
+export interface CommitInfo {
+  short_hash: string;
+  author: string;
+  /** RFC3339. */
+  timestamp: string;
+  subject: string;
 }
 
 export interface GraphNode {

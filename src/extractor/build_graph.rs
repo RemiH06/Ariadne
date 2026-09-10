@@ -11,7 +11,7 @@ use crate::extractor::manifests::{
     parse_tsconfig_paths, TsPathConfig,
 };
 use crate::extractor::walk::walk;
-use crate::schema::{EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
+use crate::schema::{CommitInfo, EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
 use anyhow::Result;
 use chrono::Utc;
 use rayon::prelude::*;
@@ -53,6 +53,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                     shape: c.shape.map(str::to_string),
                     last_author: None,
                     last_modified: None,
+                    recent_commits: None,
                     extra: Default::default(),
                 },
             }
@@ -189,21 +190,36 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
     }
     nodes.extend(class_nodes);
 
-    // Último autor/fecha de commit por archivo (heurística vía `git log`,
-    // ver extractor::git_blame) — best-effort, no falla el resto de la
-    // generación si la carpeta no es un repo git. Carpetas/raíz heredan el
-    // máximo (más reciente) entre sus hijos directos, calculado de abajo
-    // hacia arriba a partir de los archivos ya poblados.
+    // Historial corto de commits por archivo (heurística vía `git log`, ver
+    // extractor::git_blame) — best-effort, no falla el resto de la
+    // generación si la carpeta no es un repo git. `MAX_RECENT_COMMITS`
+    // alimenta tanto "ver historial" (todas las entradas) como el
+    // autor/fecha del último commit (la primera entrada de cada lista).
+    // Carpetas/raíz heredan el máximo (más reciente) entre sus hijos
+    // directos, calculado de abajo hacia arriba a partir de los archivos
+    // ya poblados.
+    const MAX_RECENT_COMMITS: usize = 5;
     let file_rel_paths: HashSet<&str> = entries.iter().filter(|e| !e.is_dir).map(|e| e.rel_path.as_str()).collect();
-    let blame_by_path = git_blame::collect_last_commit_by_path(root, &file_rel_paths);
+    let history_by_path = git_blame::collect_commit_history_by_path(root, &file_rel_paths, MAX_RECENT_COMMITS);
 
     let mut last_modified_ts: HashMap<String, i64> = HashMap::new();
     let mut last_author_by_id: HashMap<String, String> = HashMap::new();
-    for node in nodes.iter().filter(|n| n.node_type == NodeType::File) {
-        if let Some(blame) = blame_by_path.get(node.id.as_str()) {
-            last_modified_ts.insert(node.id.clone(), blame.timestamp);
-            last_author_by_id.insert(node.id.clone(), blame.author.clone());
-        }
+    for node in nodes.iter_mut().filter(|n| n.node_type == NodeType::File) {
+        let Some(history) = history_by_path.get(node.id.as_str()) else { continue };
+        let Some(latest) = history.first() else { continue };
+        last_modified_ts.insert(node.id.clone(), latest.timestamp);
+        last_author_by_id.insert(node.id.clone(), latest.author.clone());
+        node.metadata.recent_commits = Some(
+            history
+                .iter()
+                .map(|c| CommitInfo {
+                    short_hash: c.short_hash.clone(),
+                    author: c.author.clone(),
+                    timestamp: format_git_timestamp(c.timestamp),
+                    subject: c.subject.clone(),
+                })
+                .collect(),
+        );
     }
 
     let mut children_by_parent: HashMap<String, Vec<String>> = HashMap::new();

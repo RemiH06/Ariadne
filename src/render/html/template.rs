@@ -249,6 +249,34 @@ pub fn render(input: TemplateInput) -> String {
   .ariadne-node.ariadne-focused .ariadne-node-box {{
     filter: url(#focus-glow);
   }}
+  [hidden] {{
+    display: none !important;
+  }}
+  .ariadne-selection-label {{
+    font-weight: 600;
+    word-break: break-word;
+  }}
+  .ariadne-history-list {{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+  }}
+  .ariadne-history-row {{
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    border-left: 2px solid var(--ariadne-link);
+    padding-left: 7px;
+  }}
+  .ariadne-history-meta {{
+    font-size: 10px;
+    opacity: 0.6;
+  }}
+  .ariadne-history-subject {{
+    font-size: 12px;
+  }}
 </style>
 </head>
 <body>
@@ -332,6 +360,14 @@ pub fn render(input: TemplateInput) -> String {
       <label>Mostrar solo extensiones <input type="text" id="ariadne-filter-only-ext" placeholder=".ts,.rs" /></label>
       <label><input type="checkbox" id="ariadne-filter-hide-members" /> Ocultar clases/métodos/atributos</label>
       <label><input type="checkbox" id="ariadne-filter-show-refs" /> Mostrar referencias entre archivos</label>
+      <label><input type="checkbox" id="ariadne-filter-color-by-age" /> Colorear por antigüedad (más claro = más viejo)</label>
+    </div>
+
+    <div class="ariadne-section" id="ariadne-selection-section" hidden>
+      <span class="ariadne-section-title">Nodo seleccionado</span>
+      <div id="ariadne-selection-label" class="ariadne-selection-label"></div>
+      <button id="ariadne-history-btn" class="ariadne-btn" hidden>Ver historial</button>
+      <div id="ariadne-history-list" class="ariadne-history-list" hidden></div>
     </div>
 
 {legend}
