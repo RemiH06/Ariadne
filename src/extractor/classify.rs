@@ -38,11 +38,16 @@ const GENERATED_FILE_SUFFIXES: &[&str] = &[".min.js", ".min.css", ".map"];
 
 pub fn classify(abs_path: &Path, rel_path: &str, is_dir: bool) -> Classification {
     if is_dir {
+        let name_lower = abs_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        let icon_key = standard_folder_kind(&name_lower).map(|kind| format!("folder-{kind}"));
         return Classification {
             node_type: NodeType::Directory,
             extension: None,
             language: None,
-            icon_key: None,
+            icon_key,
             is_generated: path_has_generated_segment(rel_path),
             size_bytes: None,
             line_count: None,
@@ -155,6 +160,20 @@ fn file_shape(ext: Option<&str>) -> Option<&'static str> {
         | Some("avif") => Some("image"),
         Some("txt") | Some("log") | Some("text") => Some("text"),
         Some("html") | Some("htm") | Some("xml") | Some("md") | Some("markdown") | Some("rst") | Some("adoc") => Some("markup"),
+        _ => None,
+    }
+}
+
+/// Nombre de carpeta reconocible por convención — decide el ÍCONO de una
+/// carpeta (el color/forma de directorio se queda uniforme a propósito).
+/// Comparación exacta contra el nombre de la carpeta, no substring, para no
+/// marcar por accidente algo como `src-legacy` o `config_old`.
+fn standard_folder_kind(name_lower: &str) -> Option<&'static str> {
+    match name_lower {
+        "test" | "tests" | "__tests__" | "spec" | "specs" => Some("test"),
+        "config" | "configs" | "conf" | "settings" => Some("config"),
+        "src" | "source" | "lib" => Some("src"),
+        "docs" | "doc" | "documentation" => Some("docs"),
         _ => None,
     }
 }
@@ -282,6 +301,17 @@ mod tests {
         assert_eq!(file_shape(Some("html")), Some("markup"));
         assert_eq!(file_shape(Some("rs")), None);
         assert_eq!(file_shape(None), None);
+    }
+
+    #[test]
+    fn recognizes_standard_folder_names() {
+        assert_eq!(standard_folder_kind("tests"), Some("test"));
+        assert_eq!(standard_folder_kind("__tests__"), Some("test"));
+        assert_eq!(standard_folder_kind("config"), Some("config"));
+        assert_eq!(standard_folder_kind("src"), Some("src"));
+        assert_eq!(standard_folder_kind("docs"), Some("docs"));
+        assert_eq!(standard_folder_kind("src-legacy"), None);
+        assert_eq!(standard_folder_kind("assets"), None);
     }
 
     #[test]

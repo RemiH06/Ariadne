@@ -420,6 +420,14 @@ export class DiagramRenderer {
         const geom = geomById.get(node.id)!;
         if (isRowShape(shapeFor(node))) return geom.tabHeight / 2 - ICON_SIZE / 2;
         return -geom.contentHeight / 2;
+      })
+      // Los íconos de carpeta estándar (test/config/src/docs) son dibujos
+      // propios en "currentColor", a diferencia de los de Devicon (que ya
+      // traen su propia paleta) — necesitan un color explícito que
+      // contraste contra el relleno de la carpeta.
+      .attr("color", (d) => {
+        const node = this.graphNode(d);
+        return node.node_type === "directory" ? contrastTextColor(this.colorFor(node)) : null;
       });
 
     linkLayer

@@ -269,6 +269,22 @@ pub fn render(input: TemplateInput) -> String {
     <symbol id="icon-fit-screen" viewBox="0 0 24 24">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
+    <symbol id="icon-folder-test" viewBox="0 0 24 24">
+      <path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-folder-config" viewBox="0 0 24 24">
+      <path d="M4 7h6M16 7h4M4 12h1M7 12h13M4 17h6M16 17h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="11" cy="7" r="2.3" fill="currentColor"/>
+      <circle cx="4.3" cy="12" r="2.3" fill="currentColor"/>
+      <circle cx="11" cy="17" r="2.3" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-folder-src" viewBox="0 0 24 24">
+      <path d="M9 8l-5 4 5 4M15 8l5 4-5 4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-folder-docs" viewBox="0 0 24 24">
+      <path d="M7 3h7l4 4v14H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M14 3v4h4M9 12h6M9 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </symbol>
     <marker id="arrow-focus" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="{accent}"/>
     </marker>
