@@ -1,6 +1,10 @@
 import { hierarchy, tree, type HierarchyNode, type HierarchyPointNode } from "d3-hierarchy";
 import { select, type Selection } from "d3-selection";
 import { linkRadial } from "d3-shape";
+// Efecto secundario: registra `.transition()` en Selection (aumenta el tipo
+// vía d3-transition/index.d.ts) — sin este import, aunque el runtime lo
+// trajera transitivamente, TypeScript no vería el método.
+import "d3-transition";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
 import type { RefEdge } from "./data.js";
 import { DIRECTION_VECTORS, type LayoutMode, type Vec2 } from "./layout.js";
@@ -25,6 +29,8 @@ const SHAPE_SIZE_GROWTH = 0.7; // crecimiento máximo (fracción) por tamaño de
 const REGULAR_SHAPE_MARGIN = 1.15; // margen del radio sobre el contenido — el texto puede salirse, esto es solo para que el ícono no quede pegado al borde
 const OVERFLOW_RESERVE = 16 * NODE_SCALE; // margen extra que el layout reserva alrededor de una etiqueta que se sale de su figura, para que no toque al vecino
 const TEXT_HALO_WIDTH = 3 * NODE_SCALE;
+const LAYOUT_TRANSITION_MS = 600; // duración del reacomodo animado al colapsar/expandir o cambiar de dirección
+const LAYOUT_TRANSITION_NAME = "ariadne-layout"; // nombrada para que un render nuevo interrumpa limpio al anterior en vez de competir
 
 interface BoxGeom {
   width: number;
@@ -133,6 +139,11 @@ export class DiagramRenderer {
   private lastRefEdges: RefEdge[] = [];
   private showReferences = false;
   private focusedId: string | null = null;
+  /** Centro de cada nodo en el render anterior, por id — permite animar de
+   * la posición vieja a la nueva en vez de saltar de golpe, y decidir de
+   * dónde "aparece" un nodo que no existía antes (desde su padre). Vacío
+   * en el primer render, que por eso sale instantáneo. */
+  private lastPositionById = new Map<string, Vec2>();
 
   constructor(svgEl: SVGSVGElement, config: RenderConfig, callbacks: RenderCallbacks) {
     this.svg = select(svgEl);
@@ -189,23 +200,59 @@ export class DiagramRenderer {
     // real depende del tamaño de las cajas, que solo se conoce después de
     // medir el texto — el layout de d3 corre más abajo.
     const nodes = rootHierarchy.descendants();
+    // Primer render (nada que animar desde dónde): sale instantáneo en vez
+    // de hacer que todo el árbol se desvanezca desde el centro.
+    const isFirstRender = this.lastPositionById.size === 0;
 
-    this.viewport.selectAll("*").remove();
+    // Las capas de referencias/focus son 100% condicionales (aparecen y
+    // desaparecen según filtros/estado) — se recrean desde cero en cada
+    // render, a diferencia de nodos/links de abajo que ahora persisten
+    // entre renders para poder animarse.
+    this.viewport.selectAll(".ariadne-ref-links, .ariadne-focus-links").remove();
 
-    const linkLayer = this.viewport
+    let linkLayer = this.viewport.select<SVGGElement>(".ariadne-links");
+    if (linkLayer.empty()) {
+      linkLayer = this.viewport
+        .append("g")
+        .attr("class", "ariadne-links")
+        .attr("fill", "none")
+        .attr("stroke", this.config.html.link_color)
+        .attr("stroke-width", 1.5);
+    }
+    let nodeLayer = this.viewport.select<SVGGElement>(".ariadne-nodes");
+    if (nodeLayer.empty()) {
+      nodeLayer = this.viewport.append("g").attr("class", "ariadne-nodes");
+    }
+
+    // Join con clave por id de nodo (no por índice): así un nodo que
+    // sobrevive entre renders (aunque cambie de posición en el árbol al
+    // colapsar un hermano) se reconoce como EL MISMO elemento del DOM y se
+    // puede animar de su posición vieja a la nueva, en vez de que todo el
+    // diagrama se destruya y reconstruya de golpe en cada cambio.
+    const keyFn = (d: HierarchyNode<TreeNode>) => this.graphNode(d).id;
+    const nodeJoin = nodeLayer.selectAll<SVGGElement, HierarchyNode<TreeNode>>("g.ariadne-node").data(nodes, keyFn as never);
+
+    // Además de desvanecerse, encoge hacia su propio centro — un cambio de
+    // tamaño se nota mucho más a simple vista que solo la opacidad,
+    // sobre todo cuando el nodo que desaparece no es grande en pantalla.
+    nodeJoin
+      .exit<HierarchyNode<TreeNode>>()
+      .transition(LAYOUT_TRANSITION_NAME)
+      .duration(isFirstRender ? 0 : LAYOUT_TRANSITION_MS)
+      .style("opacity", 0)
+      .attr("transform", function () {
+        const current = (this as SVGGElement).getAttribute("transform") ?? "translate(0,0)";
+        const base = current.replace(/\s*scale\([^)]*\)/, "");
+        return `${base} scale(0.35)`;
+      })
+      .remove();
+
+    const nodeGroupsEnter = nodeJoin
+      .enter()
       .append("g")
-      .attr("class", "ariadne-links")
-      .attr("fill", "none")
-      .attr("stroke", this.config.html.link_color)
-      .attr("stroke-width", 1.5);
-    const nodeLayer = this.viewport.append("g").attr("class", "ariadne-nodes");
-
-    const nodeGroups = nodeLayer
-      .selectAll<SVGGElement, HierarchyNode<TreeNode>>("g")
-      .data(nodes)
-      .join("g")
       .attr("class", "ariadne-node")
       .style("cursor", "pointer")
+      .style("opacity", 0)
       .on("click", (_event: MouseEvent, d: HierarchyNode<TreeNode>) => {
         const node = this.graphNode(d);
         if (this.hasChildren(d)) {
@@ -216,6 +263,13 @@ export class DiagramRenderer {
           this.setFocusedNode(node.id);
         }
       });
+
+    const nodeGroups = nodeGroupsEnter.merge(nodeJoin as never);
+    // El contenido interno (forma/ícono/texto) se reconstruye desde cero en
+    // cada render — es barato, y así no hay que actualizar cada pieza por
+    // separado; lo único que se anima es la posición/opacidad del grupo
+    // completo, más abajo.
+    nodeGroups.selectAll("*").remove();
 
     // Paso 1: texto primero (sin caja aún) para poder medirlo con getBBox().
     const textSel = nodeGroups
@@ -301,10 +355,31 @@ export class DiagramRenderer {
     const positionById = new Map<string, PositionedNode>();
     for (const p of positioned) positionById.set(this.graphNode(p.hnode).id, p);
 
-    nodeGroups.attr("transform", (d) => {
-      const p = positionById.get(this.graphNode(d).id)!;
-      return `translate(${p.center.x},${p.center.y})`;
+    // Los nodos que entran aparecen chiquitos desde la posición de su padre
+    // en el render anterior (o su propia posición final si es la raíz, o si
+    // el padre tampoco existía antes) y crecen a su tamaño real — un cambio
+    // de tamaño se nota mucho más a simple vista que solo el desvanecido,
+    // igual que al salir (arriba). Los que ya existían se dejan donde
+    // estaban por ahora; la transición de abajo anima a TODOS hacia su
+    // posición final, así un nodo nuevo se ve "salir" de su padre en vez de
+    // aparecer de la nada, y uno que sobrevive se desliza en vez de saltar
+    // de golpe cuando el resto del árbol se reacomoda.
+    nodeGroupsEnter.attr("transform", (d) => {
+      const node = this.graphNode(d);
+      const finalPos = positionById.get(node.id)!.center;
+      const parentId = d.parent ? this.graphNode(d.parent).id : null;
+      const startPos = (parentId && this.lastPositionById.get(parentId)) || finalPos;
+      return `translate(${startPos.x},${startPos.y}) scale(0.35)`;
     });
+
+    nodeGroups
+      .transition(LAYOUT_TRANSITION_NAME)
+      .duration(isFirstRender ? 0 : LAYOUT_TRANSITION_MS)
+      .style("opacity", 1)
+      .attr("transform", (d) => {
+        const p = positionById.get(this.graphNode(d).id)!;
+        return `translate(${p.center.x},${p.center.y}) scale(1)`;
+      });
 
     // Paso 2: la forma (carpeta, libro, círculo, o un polígono regular),
     // insertada detrás del texto.
@@ -430,10 +505,23 @@ export class DiagramRenderer {
         return node.node_type === "directory" ? contrastTextColor(this.colorFor(node)) : null;
       });
 
-    linkLayer
-      .selectAll("path")
-      .data(links)
-      .join("path")
+    // Mismo criterio de animación que los nodos: los links que sobreviven
+    // (unen dos nodos que ya existían) interpolan su curva vieja->nueva;
+    // los que entran/salen (al expandir/colapsar una carpeta) solo se
+    // desvanecen, ya que no hay una curva anterior de la cuál partir.
+    const linkKeyFn = (l: { source: HierarchyNode<TreeNode>; target: HierarchyNode<TreeNode> }) =>
+      `${this.graphNode(l.source).id}=>${this.graphNode(l.target).id}`;
+    const linkJoin = linkLayer.selectAll<SVGPathElement, (typeof links)[number]>("path").data(links, linkKeyFn as never);
+
+    linkJoin.exit().transition(LAYOUT_TRANSITION_NAME).duration(isFirstRender ? 0 : LAYOUT_TRANSITION_MS).style("opacity", 0).remove();
+
+    const linkEnter = linkJoin.enter().append("path").style("opacity", 0).attr("d", (link) => pathFor(link));
+
+    linkEnter
+      .merge(linkJoin as never)
+      .transition(LAYOUT_TRANSITION_NAME)
+      .duration(isFirstRender ? 0 : LAYOUT_TRANSITION_MS)
+      .style("opacity", 1)
       .attr("d", (link) => pathFor(link));
 
     if (this.showReferences && refEdges.length > 0) {
@@ -452,6 +540,13 @@ export class DiagramRenderer {
         .join("path")
         .attr("d", (edge) => this.refEdgePath(edge, positionById));
     }
+
+    // `linkLayer` y los grupos de nodo ahora persisten entre renders (para
+    // poder animarlos), así que a diferencia de antes hay que resetear
+    // explícitamente lo que dejó un focus anterior — si no, se quedaría
+    // atenuado/marcado para siempre en cuanto se usa el focus una vez.
+    linkLayer.attr("opacity", 1);
+    nodeGroups.classed("ariadne-dimmed", false).classed("ariadne-focused", false);
 
     // Focus de nodo: resalta sus referencias directas (entrantes y
     // salientes) con flechas dirigidas, atenuando el resto del diagrama.
@@ -483,6 +578,8 @@ export class DiagramRenderer {
         .join("path")
         .attr("d", (edge) => this.refEdgePath(edge, positionById));
     }
+
+    this.lastPositionById = new Map(positioned.map((p) => [this.graphNode(p.hnode).id, p.center]));
 
     if (opts.refit) {
       this.fitToViewport(positioned);
