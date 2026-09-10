@@ -9,14 +9,27 @@ export interface FilterState {
   hideGenerated: boolean;
   maxDepth: number | null;
   hideExtensions: Set<string>;
+  /** Si no está vacío, oculta cualquier archivo cuya extensión NO esté en
+   * el set (allowlist) — inverso de `hideExtensions`. Las carpetas del
+   * camino hacia un archivo que sí calza se quedan visibles igual, ya que
+   * el filtro no se aplica a nodos sin `metadata.extension`. */
+  onlyExtensions: Set<string>;
+  /** Oculta los nodos class/method/attribute extraídos de cada archivo. */
+  hideMembers: boolean;
 }
+
+const MEMBER_NODE_TYPES = new Set(["class", "method", "attribute"]);
 
 function passesOwnFilter(node: GraphNode, filters: FilterState): boolean {
   if (node.node_type === "root") return true;
   if (filters.hideGenerated && node.metadata.is_generated) return false;
   if (filters.maxDepth !== null && node.depth > filters.maxDepth) return false;
-  if (node.metadata.extension && filters.hideExtensions.has(node.metadata.extension)) {
-    return false;
+  if (filters.hideMembers && MEMBER_NODE_TYPES.has(node.node_type)) return false;
+  if (node.metadata.extension) {
+    if (filters.hideExtensions.has(node.metadata.extension)) return false;
+    if (filters.onlyExtensions.size > 0 && !filters.onlyExtensions.has(node.metadata.extension)) {
+      return false;
+    }
   }
   return true;
 }

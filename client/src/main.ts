@@ -16,6 +16,8 @@ function main(): void {
     hideGenerated: config.filters.hide_generated,
     maxDepth: config.filters.max_depth ?? null,
     hideExtensions: new Set(config.filters.hide_extensions),
+    onlyExtensions: new Set(),
+    hideMembers: false,
   };
 
   const renderer = new DiagramRenderer(svgEl, config, {
@@ -39,10 +41,12 @@ function main(): void {
   const hideGeneratedInput = document.getElementById("ariadne-filter-hide-generated") as HTMLInputElement | null;
   const maxDepthInput = document.getElementById("ariadne-filter-max-depth") as HTMLInputElement | null;
   const hideExtInput = document.getElementById("ariadne-filter-hide-ext") as HTMLInputElement | null;
+  const onlyExtInput = document.getElementById("ariadne-filter-only-ext") as HTMLInputElement | null;
+  const hideMembersInput = document.getElementById("ariadne-filter-hide-members") as HTMLInputElement | null;
 
-  if (hideGeneratedInput && maxDepthInput && hideExtInput) {
+  if (hideGeneratedInput && maxDepthInput && hideExtInput && onlyExtInput && hideMembersInput) {
     filterState = initFilterControls(
-      { hideGeneratedInput, maxDepthInput, hideExtInput },
+      { hideGeneratedInput, maxDepthInput, hideExtInput, onlyExtInput, hideMembersInput },
       config.filters,
       (state) => {
         filterState = state;

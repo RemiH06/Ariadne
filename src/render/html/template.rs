@@ -153,6 +153,7 @@ pub fn render(input: TemplateInput) -> String {
   .ariadne-legend-triangle {{ clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }}
   .ariadne-legend-pentagon {{ clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%); }}
   .ariadne-legend-octagon {{ clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }}
+  .ariadne-legend-hexagon {{ clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }}
   .ariadne-legend-folder {{ clip-path: polygon(0% 20%, 42% 20%, 52% 2%, 100% 2%, 100% 100%, 0% 100%); }}
   .ariadne-legend-book {{ position: relative; border-radius: 2px; }}
   .ariadne-legend-book::after {{
@@ -329,6 +330,8 @@ pub fn render(input: TemplateInput) -> String {
       <label><input type="checkbox" id="ariadne-filter-hide-generated" /> Ocultar generados</label>
       <label>Profundidad máx. <input type="number" id="ariadne-filter-max-depth" min="0" /> <span style="opacity:.65">(total: <strong id="ariadne-depth-indicator">–</strong>)</span></label>
       <label>Ocultar extensiones <input type="text" id="ariadne-filter-hide-ext" placeholder=".lock,.min.js" /></label>
+      <label>Mostrar solo extensiones <input type="text" id="ariadne-filter-only-ext" placeholder=".ts,.rs" /></label>
+      <label><input type="checkbox" id="ariadne-filter-hide-members" /> Ocultar clases/métodos/atributos</label>
       <label><input type="checkbox" id="ariadne-filter-show-refs" /> Mostrar referencias entre archivos</label>
     </div>
 
@@ -371,6 +374,7 @@ fn legend_html(colors: &ColorsConfig) -> String {
           <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-triangle"></span> Imagen</div>
           <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-pentagon"></span> Texto plano</div>
           <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-octagon"></span> Markup/docs</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-shape ariadne-legend-hexagon" style="background:{class}"></span> Clase</div>
         </div>
         <div class="ariadne-legend-group">
           <span class="ariadne-legend-subtitle">Color</span>
@@ -383,6 +387,9 @@ fn legend_html(colors: &ColorsConfig) -> String {
           <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{styles}"></span> Estilos</div>
           <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{markup}"></span> Markup</div>
           <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{script}"></span> Script</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{class}"></span> Clase</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{method}"></span> Método</div>
+          <div class="ariadne-legend-row"><span class="ariadne-legend-swatch" style="background:{attribute}"></span> Atributo</div>
         </div>
       </div>
     </div>"##,
@@ -395,6 +402,9 @@ fn legend_html(colors: &ColorsConfig) -> String {
         styles = colors.styles,
         markup = colors.markup,
         script = colors.script,
+        class = colors.class,
+        method = colors.method,
+        attribute = colors.attribute,
     )
 }
 
