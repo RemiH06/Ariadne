@@ -120,6 +120,53 @@ pub fn render(input: TemplateInput) -> String {
     transform: translateX(-8px);
     pointer-events: none;
   }}
+  #ariadne-selection-toggle {{
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 11;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ariadne-bg);
+    color: var(--ariadne-text);
+    border: 1px solid var(--ariadne-link);
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    transition: border-color 0.15s ease;
+  }}
+  #ariadne-selection-toggle:hover {{
+    border-color: var(--ariadne-accent);
+  }}
+  #ariadne-selection-panel {{
+    position: absolute;
+    top: 12px;
+    right: 54px;
+    z-index: 10;
+    width: 260px;
+    background: var(--ariadne-bg);
+    border: 1px solid var(--ariadne-link);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }}
+  #ariadne-selection-panel.ariadne-collapsed {{
+    opacity: 0;
+    transform: translateX(8px);
+    pointer-events: none;
+  }}
   .ariadne-legend {{
     display: flex;
     gap: 18px;
@@ -363,14 +410,14 @@ pub fn render(input: TemplateInput) -> String {
       <label><input type="checkbox" id="ariadne-filter-color-by-age" /> Colorear por antigüedad (más claro = más viejo)</label>
     </div>
 
-    <div class="ariadne-section" id="ariadne-selection-section" hidden>
-      <span class="ariadne-section-title">Nodo seleccionado</span>
-      <div id="ariadne-selection-label" class="ariadne-selection-label"></div>
-      <button id="ariadne-history-btn" class="ariadne-btn" hidden>Ver historial</button>
-      <div id="ariadne-history-list" class="ariadne-history-list" hidden></div>
-    </div>
-
 {legend}
+  </div>
+  <button id="ariadne-selection-toggle" title="Mostrar/ocultar nodo seleccionado">▸</button>
+  <div id="ariadne-selection-panel">
+    <span class="ariadne-section-title">Nodo seleccionado</span>
+    <div id="ariadne-selection-label" class="ariadne-selection-label">Hacé click en un nodo para ver su información.</div>
+    <button id="ariadne-history-btn" class="ariadne-btn" hidden>Ver historial</button>
+    <div id="ariadne-history-list" class="ariadne-history-list" hidden></div>
   </div>
 </div>
 <script type="application/json" id="ariadne-graph-data">{graph_json}</script>

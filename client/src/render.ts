@@ -1084,8 +1084,8 @@ export function formatRelativeDate(iso: string): string {
   return years === 1 ? "hace 1 año" : `hace ${years} años`;
 }
 
-const MAX_AGE_LIGHTEN = 0.35; // fracción máxima que se suma a la luminosidad (HSL) del archivo más viejo
-const MAX_LIGHTNESS = 0.92; // tope para no llegar a blanco puro con el archivo más viejo del grafo
+const MAX_AGE_LIGHTEN = 0.16; // fracción máxima que se suma a la luminosidad (HSL) del archivo más viejo
+const MAX_LIGHTNESS = 0.8; // tope para no llegar a un color deslavado con el archivo más viejo del grafo
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));

@@ -4,25 +4,28 @@ import { LAYOUT_MODES, type LayoutMode } from "./layout.js";
 import { DiagramRenderer, formatRelativeDate } from "./render.js";
 import type { Graph, GraphNode, RenderConfig } from "./types.js";
 
-/** Muestra/oculta la sección "Nodo seleccionado" del panel según el focus
- * actual, y arma la lista de "ver historial" (vacía hasta el primer click,
- * después queda cacheada en el DOM). */
+const NO_SELECTION_LABEL = "Hacé click en un nodo para ver su información.";
+
+/** Actualiza el contenido del panel de "Nodo seleccionado" (su propio panel
+ * a la derecha, con pestaña independiente — no se muestra/oculta según el
+ * focus, eso lo controla el usuario con la pestaña) y arma la lista de
+ * "ver historial" (vacía hasta el primer click, después queda cacheada en
+ * el DOM). */
 function updateSelectionPanel(node: GraphNode | null): void {
-  const section = document.getElementById("ariadne-selection-section");
   const label = document.getElementById("ariadne-selection-label");
   const historyBtn = document.getElementById("ariadne-history-btn") as HTMLButtonElement | null;
   const historyList = document.getElementById("ariadne-history-list");
-  if (!section || !label || !historyBtn || !historyList) return;
+  if (!label || !historyBtn || !historyList) return;
 
   historyList.hidden = true;
   historyList.replaceChildren();
 
   if (!node) {
-    section.hidden = true;
+    label.textContent = NO_SELECTION_LABEL;
+    historyBtn.hidden = true;
     return;
   }
 
-  section.hidden = false;
   label.textContent = node.label;
 
   const commits = node.metadata.recent_commits ?? [];
@@ -111,6 +114,13 @@ function main(): void {
   controlsToggle?.addEventListener("click", () => {
     const collapsed = controlsPanel?.classList.toggle("ariadne-collapsed");
     controlsToggle.textContent = collapsed ? "▸" : "◂";
+  });
+
+  const selectionPanel = document.getElementById("ariadne-selection-panel");
+  const selectionToggle = document.getElementById("ariadne-selection-toggle");
+  selectionToggle?.addEventListener("click", () => {
+    const collapsed = selectionPanel?.classList.toggle("ariadne-collapsed");
+    selectionToggle.textContent = collapsed ? "◂" : "▸";
   });
 
   const showRefsInput = document.getElementById("ariadne-filter-show-refs") as HTMLInputElement | null;
