@@ -429,16 +429,24 @@ fn resolve_js_relative(importer_rel_path: &str, spec: &str, known_ids: &HashSet<
         return None;
     }
     let combined = normalize_path(&parent_dir(importer_rel_path), spec);
+    try_js_candidates(&combined, known_ids)
+}
 
+/// Prueba un path "combinado" (ya resuelto contra el directorio base, sin
+/// resolver todavía extensión/index) contra el grafo — compartido entre la
+/// resolución relativa (`./foo`) y la de alias de `tsconfig.json` (`@app/foo`),
+/// que llegan a este mismo punto por caminos distintos pero necesitan probar
+/// las mismas variantes.
+fn try_js_candidates(combined: &str, known_ids: &HashSet<&str>) -> Option<String> {
     // Coincidencia exacta primero (el specifier ya trae una extensión real).
-    if known_ids.contains(combined.as_str()) {
-        return Some(combined);
+    if known_ids.contains(combined) {
+        return Some(combined.to_string());
     }
 
     // TS con módulos ESM importa con extensión ".js" aunque la fuente sea
     // ".ts" (convención del propio TypeScript) — hay que probar swappear
     // antes de tratar el specifier como "sin extensión".
-    let without_ext = strip_known_js_extension(&combined);
+    let without_ext = strip_known_js_extension(combined);
     for ext in JS_EXTENSIONS {
         let candidate = format!("{without_ext}{ext}");
         if known_ids.contains(candidate.as_str()) {
@@ -461,6 +469,41 @@ fn strip_known_js_extension(path: &str) -> &str {
         }
     }
     path
+}
+
+/// Alias de `tsconfig.json` (`compilerOptions.paths`, ej. `"@app/*":
+/// ["src/app/*"]`). Cada patrón admite como máximo un `*` (igual criterio
+/// que TypeScript): sin `*` exige coincidencia exacta del specifier
+/// completo; con `*` exige que el specifier calce el prefijo/sufijo
+/// alrededor del comodín, y el segmento capturado se sustituye en cada
+/// target antes de probarlo contra el grafo.
+pub fn resolve_ts_alias(spec: &str, config: &crate::extractor::manifests::TsPathConfig, known_ids: &HashSet<&str>) -> Option<String> {
+    for (pattern, targets) in &config.paths {
+        let captured: Option<&str> = match pattern.find('*') {
+            None => (spec == pattern).then_some(""),
+            Some(star_idx) => {
+                let prefix = &pattern[..star_idx];
+                let suffix = &pattern[star_idx + 1..];
+                if spec.starts_with(prefix) && spec.ends_with(suffix) && spec.len() >= prefix.len() + suffix.len() {
+                    Some(&spec[prefix.len()..spec.len() - suffix.len()])
+                } else {
+                    None
+                }
+            }
+        };
+        let Some(captured) = captured else { continue };
+        for target in targets {
+            let resolved_target = match target.find('*') {
+                Some(star_idx) => format!("{}{}{}", &target[..star_idx], captured, &target[star_idx + 1..]),
+                None => target.clone(),
+            };
+            let combined = normalize_path(&config.base_dir, &resolved_target);
+            if let Some(found) = try_js_candidates(&combined, known_ids) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 fn resolve_python_relative(importer_rel_path: &str, spec: &str, known_ids: &HashSet<&str>) -> Option<String> {
@@ -568,11 +611,20 @@ fn resolve_rust_dir_path(base_dir: &str, dotted: &str, known_ids: &HashSet<&str>
 /// En Go un import referencia un **paquete** (carpeta), no un archivo
 /// puntual — así que esto conecta el archivo importador con un nodo
 /// `directory`, no con otro archivo. `module_name` sale de la línea
-/// `module ...` de `go.mod`.
-pub fn resolve_go_package(specifier: &str, module_name: &str, known_ids: &HashSet<&str>) -> Option<String> {
+/// `module ...` del `go.mod` más cercano al archivo importador, y
+/// `module_dir` es el directorio de ese mismo `go.mod` (relativo a la raíz
+/// del proyecto) — necesario para multi-módulo, donde el módulo no
+/// necesariamente empieza en la raíz del repo.
+pub fn resolve_go_package(specifier: &str, module_name: &str, module_dir: &str, known_ids: &HashSet<&str>) -> Option<String> {
     let rest = specifier.strip_prefix(module_name)?;
     let rest = rest.strip_prefix('/').unwrap_or(rest);
-    let dir_id = if rest.is_empty() { ".".to_string() } else { rest.to_string() };
+    let dir_id = if rest.is_empty() {
+        module_dir.to_string()
+    } else if module_dir == "." {
+        rest.to_string()
+    } else {
+        format!("{module_dir}/{rest}")
+    };
     known_ids.contains(dir_id.as_str()).then_some(dir_id)
 }
 
@@ -713,7 +765,7 @@ pub fn resolve_r_source(importer_rel_path: &str, spec: &str, known_ids: &HashSet
     None
 }
 
-fn normalize_path(base_dir: &str, spec: &str) -> String {
+pub(crate) fn normalize_path(base_dir: &str, spec: &str) -> String {
     let mut segments: Vec<&str> = if base_dir == "." { Vec::new() } else { base_dir.split('/').collect() };
     for part in spec.split('/') {
         match part {
@@ -815,6 +867,43 @@ const mod = await import('./lazy');
         known.insert("src/utils.ts");
         let resolved = resolve_relative_import("src/app.ts", "./utils", "typescript", &known);
         assert_eq!(resolved.as_deref(), Some("src/utils.ts"));
+    }
+
+    #[test]
+    fn resolves_ts_alias_with_wildcard() {
+        use crate::extractor::manifests::TsPathConfig;
+        let mut known = HashSet::new();
+        known.insert("src/app/foo.ts");
+        let config = TsPathConfig {
+            base_dir: ".".to_string(),
+            paths: vec![("@app/*".to_string(), vec!["src/app/*".to_string()])],
+        };
+        let resolved = resolve_ts_alias("@app/foo", &config, &known);
+        assert_eq!(resolved.as_deref(), Some("src/app/foo.ts"));
+    }
+
+    #[test]
+    fn resolves_ts_alias_exact_no_wildcard() {
+        use crate::extractor::manifests::TsPathConfig;
+        let mut known = HashSet::new();
+        known.insert("src/utils/index.ts");
+        let config = TsPathConfig {
+            base_dir: ".".to_string(),
+            paths: vec![("@utils".to_string(), vec!["src/utils".to_string()])],
+        };
+        let resolved = resolve_ts_alias("@utils", &config, &known);
+        assert_eq!(resolved.as_deref(), Some("src/utils/index.ts"));
+    }
+
+    #[test]
+    fn does_not_resolve_ts_alias_when_no_pattern_matches() {
+        use crate::extractor::manifests::TsPathConfig;
+        let known = HashSet::new();
+        let config = TsPathConfig {
+            base_dir: ".".to_string(),
+            paths: vec![("@app/*".to_string(), vec!["src/app/*".to_string()])],
+        };
+        assert_eq!(resolve_ts_alias("react", &config, &known), None);
     }
 
     #[test]
@@ -960,7 +1049,7 @@ const mod = await import('./lazy');
     fn resolves_go_package_to_directory() {
         let mut known = HashSet::new();
         known.insert("internal/utils");
-        let resolved = resolve_go_package("myproject/internal/utils", "myproject", &known);
+        let resolved = resolve_go_package("myproject/internal/utils", "myproject", ".", &known);
         assert_eq!(resolved.as_deref(), Some("internal/utils"));
     }
 
@@ -968,8 +1057,18 @@ const mod = await import('./lazy');
     fn resolves_go_package_root_itself() {
         let mut known = HashSet::new();
         known.insert(".");
-        let resolved = resolve_go_package("myproject", "myproject", &known);
+        let resolved = resolve_go_package("myproject", "myproject", ".", &known);
         assert_eq!(resolved.as_deref(), Some("."));
+    }
+
+    #[test]
+    fn resolves_go_package_nested_module() {
+        // multi-módulo: el go.mod de este paquete no está en la raíz del
+        // repo, así que el paquete resuelto debe quedar bajo module_dir.
+        let mut known = HashSet::new();
+        known.insert("services/api/internal/utils");
+        let resolved = resolve_go_package("myservice/internal/utils", "myservice", "services/api", &known);
+        assert_eq!(resolved.as_deref(), Some("services/api/internal/utils"));
     }
 
     // --- Java / Kotlin ---

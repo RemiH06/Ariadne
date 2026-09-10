@@ -89,6 +89,17 @@ fn dedupe(deps: Vec<LibraryDep>) -> Vec<LibraryDep> {
     deps.into_iter().filter(|d| seen.insert(d.name.clone())).collect()
 }
 
+/// Si `Cargo.toml` declara `[package]` es un crate real (su carpeta tiene un
+/// `src/` propio); si solo tiene `[workspace]` es un manifiesto raíz de
+/// workspace puro, y no debe usarse como raíz de `crate::` de ningún archivo
+/// (los archivos reales viven bajo los `Cargo.toml` de cada miembro).
+pub fn cargo_toml_has_package(content: &str) -> bool {
+    let Ok(value) = toml::from_str::<toml::Value>(content) else {
+        return false;
+    };
+    value.get("package").is_some()
+}
+
 fn parse_cargo_toml(content: &str) -> Vec<LibraryDep> {
     let Ok(value) = toml::from_str::<toml::Value>(content) else {
         return Vec::new();
@@ -435,6 +446,96 @@ pub fn parse_composer_psr4(content: &str) -> Vec<(String, String)> {
     mappings
 }
 
+/// Quita comentarios `//` y `/* */` de un JSON, respetando strings entre
+/// comillas dobles (`tsconfig.json` reales casi siempre son JSONC, y
+/// `serde_json` rechaza comentarios). No hay comillas simples ni backticks
+/// en JSON, así que el enmascarado es más simple que el de código fuente.
+fn strip_jsonc_comments(content: &str) -> String {
+    let chars: Vec<char> = content.chars().collect();
+    let mut result = String::with_capacity(chars.len());
+    let mut in_string = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            result.push(c);
+            if c == '\\' && i + 1 < chars.len() {
+                result.push(chars[i + 1]);
+                i += 2;
+                continue;
+            }
+            if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            result.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+        result.push(c);
+        i += 1;
+    }
+    result
+}
+
+/// Contexto de resolución de alias de `tsconfig.json` ya combinado con el
+/// directorio del propio `tsconfig.json` — `base_dir` es `baseUrl` relativo
+/// a la raíz del proyecto (no relativo al tsconfig), y cada patrón de
+/// `paths` sigue siendo relativo a `base_dir`. Sin soporte de `extends`
+/// (limitación aceptada, igual criterio que el resto del extractor).
+pub struct TsPathConfig {
+    pub base_dir: String,
+    pub paths: Vec<(String, Vec<String>)>,
+}
+
+/// `tsconfig_dir` es el directorio del propio `tsconfig.json` relativo a la
+/// raíz del proyecto (`"."` si está en la raíz). Devuelve `None` si no hay
+/// `compilerOptions.paths` declarado (nada que resolver) o si el JSON (tras
+/// quitar comentarios) no parsea.
+pub fn parse_tsconfig_paths(content: &str, tsconfig_dir: &str) -> Option<TsPathConfig> {
+    let stripped = strip_jsonc_comments(content);
+    let value: JsonValue = serde_json::from_str(&stripped).ok()?;
+    let compiler_options = value.get("compilerOptions")?;
+    let paths_obj = compiler_options.get("paths")?.as_object()?;
+    if paths_obj.is_empty() {
+        return None;
+    }
+
+    let base_url = compiler_options.get("baseUrl").and_then(|v| v.as_str()).unwrap_or(".");
+    let base_dir = crate::extractor::imports::normalize_path(tsconfig_dir, base_url);
+
+    let mut paths = Vec::new();
+    for (pattern, targets) in paths_obj {
+        let Some(targets_arr) = targets.as_array() else { continue };
+        let targets: Vec<String> = targets_arr.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+        if !targets.is_empty() {
+            paths.push((pattern.clone(), targets));
+        }
+    }
+    if paths.is_empty() {
+        return None;
+    }
+    Some(TsPathConfig { base_dir, paths })
+}
+
 fn parse_project_toml(content: &str) -> Vec<LibraryDep> {
     let Ok(value) = toml::from_str::<toml::Value>(content) else {
         return Vec::new();
@@ -594,6 +695,51 @@ dependencies {
         let deps = parse_manifest("DESCRIPTION", content);
         assert_eq!(names(&deps), vec!["dplyr", "ggplot2", "testthat"]);
         assert_eq!(deps[0].version.as_deref(), Some(">= 1.0.0"));
+    }
+
+    #[test]
+    fn cargo_toml_with_package_table_is_a_crate() {
+        assert!(cargo_toml_has_package("[package]\nname = \"demo\"\n"));
+    }
+
+    #[test]
+    fn cargo_toml_workspace_only_is_not_a_crate() {
+        assert!(!cargo_toml_has_package("[workspace]\nmembers = [\"crates/*\"]\n"));
+    }
+
+    #[test]
+    fn parses_tsconfig_paths_with_base_url_and_jsonc_comments() {
+        let content = r#"{
+            // comentario de línea
+            "compilerOptions": {
+                "baseUrl": ".",
+                /* comentario de bloque */
+                "paths": {
+                    "@app/*": ["src/app/*"],
+                    "@utils": ["src/utils/index.ts"]
+                }
+            }
+        }"#;
+        let config = parse_tsconfig_paths(content, ".").expect("debería parsear paths");
+        assert_eq!(config.base_dir, ".");
+        let mut paths = config.paths;
+        paths.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(paths[0].0, "@app/*");
+        assert_eq!(paths[0].1, vec!["src/app/*".to_string()]);
+        assert_eq!(paths[1].0, "@utils");
+    }
+
+    #[test]
+    fn parses_tsconfig_paths_combines_base_url_with_tsconfig_dir() {
+        let content = r#"{"compilerOptions": {"baseUrl": "src", "paths": {"@app/*": ["app/*"]}}}"#;
+        let config = parse_tsconfig_paths(content, "packages/web").expect("debería parsear paths");
+        assert_eq!(config.base_dir, "packages/web/src");
+    }
+
+    #[test]
+    fn tsconfig_without_paths_yields_none() {
+        let content = r#"{"compilerOptions": {"target": "es2020"}}"#;
+        assert!(parse_tsconfig_paths(content, ".").is_none());
     }
 
     #[test]

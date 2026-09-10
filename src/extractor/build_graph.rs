@@ -3,9 +3,12 @@ use crate::extractor::classes::extract_classes;
 use crate::extractor::classify::classify;
 use crate::extractor::imports::{
     extract_imports, resolve_elixir_absolute, resolve_go_package, resolve_haskell_absolute, resolve_java_kotlin_absolute,
-    resolve_php_absolute, resolve_python_absolute, resolve_relative_import, resolve_rust, top_level_package_name,
+    resolve_php_absolute, resolve_python_absolute, resolve_relative_import, resolve_rust, resolve_ts_alias, top_level_package_name,
 };
-use crate::extractor::manifests::{is_manifest_file, manifest_import_language, parse_composer_psr4, parse_go_module_name, parse_manifest};
+use crate::extractor::manifests::{
+    cargo_toml_has_package, is_manifest_file, manifest_import_language, parse_composer_psr4, parse_go_module_name, parse_manifest,
+    parse_tsconfig_paths, TsPathConfig,
+};
 use crate::extractor::walk::walk;
 use crate::schema::{EdgeType, Graph, GraphEdge, GraphNode, NodeMetadata, NodeType, SCHEMA_VERSION};
 use anyhow::Result;
@@ -229,15 +232,53 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
 
     // Contexto por lenguaje para resolver imports/referencias *absolutas* a
     // módulos propios del proyecto (no relativas, no de una librería
-    // externa). Cada uno es una simplificación de raíz única — sin soporte
-    // de workspaces Cargo, módulos Go o paquetes PHP múltiples en un mismo
-    // repo todavía.
-    let rust_crate_root: Option<String> = known_ids.contains("Cargo.toml").then(|| "src".to_string());
-    let go_module_name: Option<String> = entries
+    // externa). Rust/Go/PHP se registran por CADA manifiesto encontrado en
+    // el árbol (no solo el de la raíz) y se resuelven contra el más cercano
+    // al archivo importador (`nearest_ancestor`, mismo criterio que
+    // `nearest_manifest_deps` ya usa para dependencias externas) — así
+    // funcionan workspaces multi-`Cargo.toml`, multi-módulo Go y
+    // multi-paquete PHP en un mismo repo.
+    let rust_crate_roots: Vec<(String, String)> = entries
         .iter()
-        .find(|e| e.rel_path == "go.mod")
-        .and_then(|e| std::fs::read_to_string(&e.abs_path).ok())
-        .and_then(|content| parse_go_module_name(&content));
+        .filter(|e| e.rel_path == "Cargo.toml" || e.rel_path.ends_with("/Cargo.toml"))
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(&e.abs_path).ok()?;
+            if !cargo_toml_has_package(&content) {
+                return None;
+            }
+            let cargo_dir = parent_of(&e.rel_path);
+            let crate_root = if cargo_dir == "." { "src".to_string() } else { format!("{cargo_dir}/src") };
+            Some((cargo_dir, crate_root))
+        })
+        .collect();
+    let go_modules: Vec<(String, String)> = entries
+        .iter()
+        .filter(|e| e.rel_path == "go.mod" || e.rel_path.ends_with("/go.mod"))
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(&e.abs_path).ok()?;
+            let module_name = parse_go_module_name(&content)?;
+            Some((parent_of(&e.rel_path), module_name))
+        })
+        .collect();
+    let php_manifests: Vec<(String, Vec<(String, String)>)> = entries
+        .iter()
+        .filter(|e| e.rel_path == "composer.json" || e.rel_path.ends_with("/composer.json"))
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(&e.abs_path).ok()?;
+            let psr4 = parse_composer_psr4(&content);
+            (!psr4.is_empty()).then(|| (parent_of(&e.rel_path), psr4))
+        })
+        .collect();
+    let ts_configs: Vec<(String, TsPathConfig)> = entries
+        .iter()
+        .filter(|e| e.rel_path == "tsconfig.json" || e.rel_path.ends_with("/tsconfig.json"))
+        .filter_map(|e| {
+            let content = std::fs::read_to_string(&e.abs_path).ok()?;
+            let tsconfig_dir = parent_of(&e.rel_path);
+            let config = parse_tsconfig_paths(&content, &tsconfig_dir)?;
+            Some((tsconfig_dir, config))
+        })
+        .collect();
     let java_source_roots: Vec<String> = nodes
         .iter()
         .filter(|n| n.node_type == NodeType::Directory)
@@ -266,12 +307,6 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         .filter(|n| n.label == "lib")
         .map(|n| n.id.clone())
         .collect();
-    let (php_psr4_map, php_manifest_dir): (Vec<(String, String)>, String) = entries
-        .iter()
-        .find(|e| e.rel_path == "composer.json")
-        .and_then(|e| std::fs::read_to_string(&e.abs_path).ok().map(|content| (parse_composer_psr4(&content), parent_of(&e.rel_path))))
-        .unwrap_or_default();
-
     let mut seen_import_edges: HashSet<(String, String)> = HashSet::new();
     const REFERENCE_LANGUAGES: &[&str] = &[
         "javascript", "typescript", "python", "rust", "go", "java", "kotlin", "php", "ruby", "c", "cplusplus", "elixir", "haskell",
@@ -308,13 +343,20 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                     // asumir que se trata de una librería externa.
                     match lang {
                         "python" => resolve_python_absolute(&import_ref.specifier, &python_package_roots, &known_ids),
-                        "rust" => resolve_rust(&node.id, &import_ref.specifier, rust_crate_root.as_deref(), &known_ids),
-                        "go" => go_module_name.as_deref().and_then(|module| resolve_go_package(&import_ref.specifier, module, &known_ids)),
+                        "rust" => {
+                            let crate_root = nearest_ancestor(&rust_crate_roots, &file_dir).map(|(_, root)| root.as_str());
+                            resolve_rust(&node.id, &import_ref.specifier, crate_root, &known_ids)
+                        }
+                        "go" => nearest_ancestor(&go_modules, &file_dir)
+                            .and_then(|(dir, module)| resolve_go_package(&import_ref.specifier, module, dir, &known_ids)),
                         "java" => resolve_java_kotlin_absolute(&import_ref.specifier, &java_source_roots, "java", &known_ids),
                         "kotlin" => resolve_java_kotlin_absolute(&import_ref.specifier, &kotlin_source_roots, "kt", &known_ids),
-                        "php" => resolve_php_absolute(&import_ref.specifier, &php_psr4_map, &php_manifest_dir, &known_ids),
+                        "php" => nearest_ancestor(&php_manifests, &file_dir)
+                            .and_then(|(dir, psr4)| resolve_php_absolute(&import_ref.specifier, psr4, dir, &known_ids)),
                         "elixir" => resolve_elixir_absolute(&import_ref.specifier, &elixir_lib_roots, &known_ids),
                         "haskell" => resolve_haskell_absolute(&import_ref.specifier, &haskell_source_roots, &known_ids),
+                        "javascript" | "typescript" => nearest_ancestor(&ts_configs, &file_dir)
+                            .and_then(|(_, config)| resolve_ts_alias(&import_ref.specifier, config, &known_ids)),
                         _ => None,
                     }
                 })
@@ -373,6 +415,17 @@ fn parent_of(rel_path: &str) -> String {
     }
 }
 
+/// Versión genérica de "manifiesto ancestro más cercano" — el mismo
+/// criterio que `nearest_manifest_deps` de abajo, sin el filtro extra de
+/// `lang_group`. Se usa para workspaces multi-manifiesto (Rust/Go/PHP) y
+/// para alias de `tsconfig.json`: cada archivo se resuelve contra el
+/// manifiesto de su propio directorio ancestro más profundo, no contra uno
+/// global fijo — así conviven varios `Cargo.toml`/`go.mod`/`composer.json`/
+/// `tsconfig.json` en el mismo repo.
+fn nearest_ancestor<'a, T>(entries: &'a [(String, T)], file_dir: &str) -> Option<&'a (String, T)> {
+    entries.iter().filter(|(dir, _)| is_ancestor_dir(dir, file_dir)).max_by_key(|(dir, _)| dir.len())
+}
+
 /// El manifiesto más cercano (el de directorio ancestro más profundo) del
 /// mismo grupo de lenguaje que gobierna a `file_dir` — igual que Node.js
 /// busca el `package.json` más cercano subiendo directorios.
@@ -393,4 +446,33 @@ fn is_ancestor_dir(ancestor: &str, dir: &str) -> bool {
         return true;
     }
     dir == ancestor || dir.starts_with(&format!("{ancestor}/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nearest_ancestor_picks_deepest_matching_dir() {
+        let entries = vec![
+            (".".to_string(), "root".to_string()),
+            ("services/api".to_string(), "api-crate".to_string()),
+        ];
+        let found = nearest_ancestor(&entries, "services/api/internal/utils");
+        assert_eq!(found.map(|(_, v)| v.as_str()), Some("api-crate"));
+    }
+
+    #[test]
+    fn nearest_ancestor_falls_back_to_root_when_no_deeper_match() {
+        let entries = vec![(".".to_string(), "root".to_string()), ("packages/web".to_string(), "web".to_string())];
+        let found = nearest_ancestor(&entries, "packages/cli/src");
+        assert_eq!(found.map(|(_, v)| v.as_str()), Some("root"));
+    }
+
+    #[test]
+    fn nearest_ancestor_none_when_no_manifest_registered() {
+        let entries: Vec<(String, String)> = vec![("packages/web".to_string(), "web".to_string())];
+        let found = nearest_ancestor(&entries, "packages/cli/src");
+        assert!(found.is_none());
+    }
 }
