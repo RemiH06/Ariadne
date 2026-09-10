@@ -7,6 +7,7 @@ pub struct TemplateInput<'a> {
     pub link_color: &'a str,
     pub accent: &'a str,
     pub colors: &'a ColorsConfig,
+    pub favicon_data_uri: &'a str,
     pub icon_defs: &'a str,
     pub graph_json: &'a str,
     pub config_json: &'a str,
@@ -19,6 +20,7 @@ pub fn render(input: TemplateInput) -> String {
     let text_color = input.text_color;
     let link_color = input.link_color;
     let accent = input.accent;
+    let favicon_data_uri = input.favicon_data_uri;
     let icon_defs = input.icon_defs;
     let graph_json = script_safe_json(input.graph_json);
     let config_json = script_safe_json(input.config_json);
@@ -46,6 +48,7 @@ pub fn render(input: TemplateInput) -> String {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{title}</title>
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,{favicon_data_uri}' />
 <style>
   :root {{
     --ariadne-bg: {background};

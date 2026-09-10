@@ -1,4 +1,5 @@
 mod build_graph;
+mod classes;
 mod classify;
 mod imports;
 mod manifests;

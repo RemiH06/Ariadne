@@ -1,4 +1,5 @@
 use crate::config::IgnoreConfig;
+use crate::extractor::classes::extract_classes;
 use crate::extractor::classify::classify;
 use crate::extractor::imports::{
     extract_imports, resolve_elixir_absolute, resolve_go_package, resolve_haskell_absolute, resolve_java_kotlin_absolute,
@@ -121,6 +122,67 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         }
     }
 
+    // Ruta absoluta por id — se usa acá y más abajo para leer el contenido
+    // de cada archivo (clases y luego referencias entre archivos).
+    let abs_path_by_id: HashMap<&str, &Path> = entries.iter().map(|e| (e.rel_path.as_str(), e.abs_path.as_path())).collect();
+
+    // Clases/métodos/atributos: heurística de texto por lenguaje (ver
+    // extractor::classes), igual que las referencias entre archivos — no un
+    // parser real. Se insertan ANTES de calcular `child_count`/aristas
+    // `Contains` de abajo, así ese mecanismo genérico ya existente las
+    // recoge solo (un nodo Method/Attribute es "hijo" de su Class exactamente
+    // igual que un archivo es "hijo" de su carpeta).
+    let mut class_nodes: Vec<GraphNode> = Vec::new();
+    for node in nodes.iter().filter(|n| n.node_type == NodeType::File) {
+        let Some(lang) = node.metadata.language.as_deref() else {
+            continue;
+        };
+        let Some(&abs_path) = abs_path_by_id.get(node.id.as_str()) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(abs_path) else {
+            continue;
+        };
+
+        for class in extract_classes(lang, &content) {
+            let class_id = format!("{}::class::{}", node.id, class.name);
+            class_nodes.push(GraphNode {
+                id: class_id.clone(),
+                node_type: NodeType::Class,
+                label: class.name,
+                path: class_id.clone(),
+                parent_id: Some(node.id.clone()),
+                depth: node.depth + 1,
+                metadata: NodeMetadata::default(),
+            });
+            for method in class.methods {
+                let method_id = format!("{class_id}::method::{method}");
+                class_nodes.push(GraphNode {
+                    id: method_id.clone(),
+                    node_type: NodeType::Method,
+                    label: method,
+                    path: method_id,
+                    parent_id: Some(class_id.clone()),
+                    depth: node.depth + 2,
+                    metadata: NodeMetadata::default(),
+                });
+            }
+            for attribute in class.attributes {
+                let attr_id = format!("{class_id}::attr::{attribute}");
+                class_nodes.push(GraphNode {
+                    id: attr_id.clone(),
+                    node_type: NodeType::Attribute,
+                    label: attribute,
+                    path: attr_id,
+                    parent_id: Some(class_id.clone()),
+                    depth: node.depth + 2,
+                    metadata: NodeMetadata::default(),
+                });
+            }
+        }
+    }
+    nodes.extend(class_nodes);
+
     let mut counts: HashMap<String, u32> = HashMap::new();
     for node in &nodes {
         if let Some(parent) = &node.parent_id {
@@ -155,10 +217,6 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
     // y imports absolutos de otros lenguajes (`crate::foo`) quedan fuera de
     // alcance por ahora.
     let known_ids: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
-    let abs_path_by_id: HashMap<&str, &Path> = entries
-        .iter()
-        .map(|e| (e.rel_path.as_str(), e.abs_path.as_path()))
-        .collect();
     // Paquetes propios de Python: cualquier carpeta con `__init__.py`, con
     // su nombre de carpeta como nombre de paquete (misma convención que usa
     // el propio Python/pip).

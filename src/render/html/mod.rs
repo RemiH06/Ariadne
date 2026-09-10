@@ -7,6 +7,7 @@ use serde::Serialize;
 
 const CLIENT_BUNDLE: &str = include_str!("../../assets/client-bundle.js");
 const ICON_SPRITE: &str = include_str!("../../assets/icons-sprite.svg");
+const LOGO_SVG: &str = include_str!("../../assets/logo.svg");
 
 /// Espejo de `RenderConfig` en `client/src/types.ts`. `HtmlConfig` y
 /// `FilterConfig` ya coinciden campo a campo con lo que el cliente espera,
@@ -33,6 +34,10 @@ pub fn render_html(
     let config_json = serde_json::to_string(&render_config)?;
 
     let icon_defs = if html_cfg.icons.enabled { ICON_SPRITE } else { "" };
+    // `#` es el único carácter del SVG que un data URI no tolera sin
+    // codificar (se confunde con un fragmento de URL) — todo lo demás
+    // (comillas, espacios, `<`/`>`) los navegadores lo aceptan literal.
+    let favicon_data_uri = LOGO_SVG.replace('#', "%23");
 
     Ok(template::render(template::TemplateInput {
         title,
@@ -41,6 +46,7 @@ pub fn render_html(
         link_color: &html_cfg.link_color,
         accent: &html_cfg.colors.default,
         colors: &html_cfg.colors,
+        favicon_data_uri: &favicon_data_uri,
         icon_defs,
         graph_json: &graph_json,
         config_json: &config_json,
