@@ -1,6 +1,7 @@
 use crate::config::IgnoreConfig;
 use crate::extractor::classes::extract_classes;
 use crate::extractor::classify::classify;
+use crate::extractor::git_blame;
 use crate::extractor::imports::{
     extract_imports, resolve_elixir_absolute, resolve_go_package, resolve_haskell_absolute, resolve_java_kotlin_absolute,
     resolve_php_absolute, resolve_python_absolute, resolve_relative_import, resolve_rust, resolve_ts_alias, top_level_package_name,
@@ -50,6 +51,8 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                     language: c.language,
                     category: c.category.map(str::to_string),
                     shape: c.shape.map(str::to_string),
+                    last_author: None,
+                    last_modified: None,
                     extra: Default::default(),
                 },
             }
@@ -186,6 +189,67 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
     }
     nodes.extend(class_nodes);
 
+    // Último autor/fecha de commit por archivo (heurística vía `git log`,
+    // ver extractor::git_blame) — best-effort, no falla el resto de la
+    // generación si la carpeta no es un repo git. Carpetas/raíz heredan el
+    // máximo (más reciente) entre sus hijos directos, calculado de abajo
+    // hacia arriba a partir de los archivos ya poblados.
+    let file_rel_paths: HashSet<&str> = entries.iter().filter(|e| !e.is_dir).map(|e| e.rel_path.as_str()).collect();
+    let blame_by_path = git_blame::collect_last_commit_by_path(root, &file_rel_paths);
+
+    let mut last_modified_ts: HashMap<String, i64> = HashMap::new();
+    let mut last_author_by_id: HashMap<String, String> = HashMap::new();
+    for node in nodes.iter().filter(|n| n.node_type == NodeType::File) {
+        if let Some(blame) = blame_by_path.get(node.id.as_str()) {
+            last_modified_ts.insert(node.id.clone(), blame.timestamp);
+            last_author_by_id.insert(node.id.clone(), blame.author.clone());
+        }
+    }
+
+    let mut children_by_parent: HashMap<String, Vec<String>> = HashMap::new();
+    for node in &nodes {
+        if let Some(parent) = &node.parent_id {
+            children_by_parent.entry(parent.clone()).or_default().push(node.id.clone());
+        }
+    }
+
+    let mut dir_ids_by_depth: Vec<(String, u32)> = nodes
+        .iter()
+        .filter(|n| matches!(n.node_type, NodeType::Directory | NodeType::Root))
+        .map(|n| (n.id.clone(), n.depth))
+        .collect();
+    dir_ids_by_depth.sort_by_key(|(_, depth)| std::cmp::Reverse(*depth));
+
+    for (dir_id, _) in &dir_ids_by_depth {
+        let Some(children) = children_by_parent.get(dir_id) else { continue };
+        let best = children
+            .iter()
+            .filter_map(|child_id| last_modified_ts.get(child_id).map(|&ts| (ts, child_id.clone())))
+            .max_by_key(|(ts, _)| *ts);
+        let Some((ts, child_id)) = best else { continue };
+        last_modified_ts.insert(dir_id.clone(), ts);
+        if let Some(author) = last_author_by_id.get(&child_id).cloned() {
+            last_author_by_id.insert(dir_id.clone(), author);
+        }
+    }
+
+    for node in nodes.iter_mut() {
+        if let Some(&ts) = last_modified_ts.get(node.id.as_str()) {
+            node.metadata.last_modified = Some(format_git_timestamp(ts));
+        }
+        if let Some(author) = last_author_by_id.get(node.id.as_str()) {
+            node.metadata.last_author = Some(author.clone());
+        }
+    }
+
+    // `child_count` se puebla para CUALQUIER nodo con hijos, no solo
+    // carpetas/raíz — un archivo con clases o una clase con métodos/
+    // atributos también tiene hijos, y el cliente lo necesita ahí: es el
+    // respaldo que usa `hasChildren()` para saber si un nodo colapsado
+    // (sin `children` en el árbol filtrado) sigue teniendo algo que
+    // volver a expandir. Sin esto, un click para volver a expandir un nodo
+    // de este tipo se malinterpretaba como "es una hoja" y disparaba focus
+    // en vez de expandir.
     let mut counts: HashMap<String, u32> = HashMap::new();
     for node in &nodes {
         if let Some(parent) = &node.parent_id {
@@ -193,9 +257,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
         }
     }
     for node in &mut nodes {
-        if matches!(node.node_type, NodeType::Directory | NodeType::Root) {
-            node.metadata.child_count = counts.get(&node.id).copied();
-        }
+        node.metadata.child_count = counts.get(&node.id).copied();
     }
 
     let mut edges: Vec<GraphEdge> = nodes
@@ -413,6 +475,10 @@ fn parent_of(rel_path: &str) -> String {
         Some(idx) => rel_path[..idx].to_string(),
         None => ".".to_string(),
     }
+}
+
+fn format_git_timestamp(ts: i64) -> String {
+    chrono::DateTime::from_timestamp(ts, 0).map(|dt| dt.to_rfc3339()).unwrap_or_default()
 }
 
 /// Versión genérica de "manifiesto ancestro más cercano" — el mismo

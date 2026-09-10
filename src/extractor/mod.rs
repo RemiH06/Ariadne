@@ -1,6 +1,7 @@
 mod build_graph;
 mod classes;
 mod classify;
+mod git_blame;
 mod imports;
 mod manifests;
 mod walk;

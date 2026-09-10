@@ -301,14 +301,24 @@ export class DiagramRenderer {
 
     // Truncar con elipsis las etiquetas larguísimas: sin esto, un solo
     // nombre largo infla el espaciado uniforme compartido por todo el árbol
-    // y termina forzando un zoom-out extremo. Se agrega un <title> con el
-    // nombre completo como tooltip al pasar el mouse.
+    // y termina forzando un zoom-out extremo. El tooltip (nombre completo
+    // si se truncó, y/o autor/fecha del último commit si hay datos de git)
+    // se guarda acá pero se agrega más abajo sobre la FORMA del nodo, no
+    // sobre este texto — el texto tiene `pointer-events: none` (para que no
+    // se pueda seleccionar ni intercepte clicks), así que un <title> colgado
+    // de él nunca dispara el tooltip nativo al pasar el mouse.
+    const tooltipTextById = new Map<string, string>();
     textSel.each((d, i, groups) => {
       const textEl = groups[i] as SVGTextElement;
-      const fullLabel = this.graphNode(d).label;
-      const truncated = truncateToWidth(textEl, fullLabel, MAX_LABEL_WIDTH);
-      if (truncated) {
-        select(textEl).append("title").text(fullLabel);
+      const node = this.graphNode(d);
+      const truncated = truncateToWidth(textEl, node.label, MAX_LABEL_WIDTH);
+      const tooltipLines: string[] = [];
+      if (truncated) tooltipLines.push(node.label);
+      if (node.metadata.last_author && node.metadata.last_modified) {
+        tooltipLines.push(`Último commit: ${node.metadata.last_author} (${formatRelativeDate(node.metadata.last_modified)})`);
+      }
+      if (tooltipLines.length > 0) {
+        tooltipTextById.set(node.id, tooltipLines.join("\n"));
       }
     });
 
@@ -437,6 +447,13 @@ export class DiagramRenderer {
         .attr("fill", this.colorFor(node))
         .attr("stroke", this.config.html.background)
         .attr("stroke-width", 1.5 * NODE_SCALE);
+
+      // El tooltip vive acá (sobre la forma, que sí recibe eventos de
+      // mouse) y no sobre el texto — ver comentario en el Paso 1.
+      const tooltipText = tooltipTextById.get(node.id);
+      if (tooltipText) {
+        shape.append("title").text(tooltipText);
+      }
 
       // El "lomo" del libro: un par de líneas verticales cerca del borde
       // izquierdo, para distinguir de un archivo/rectángulo cualquiera.
@@ -1001,6 +1018,21 @@ function regularPolygonExtent(sides: number, radius: number, rotationDeg: number
     maxY = Math.max(maxY, y);
   }
   return { width: maxX - minX, height: maxY - minY };
+}
+
+/** Fecha RFC3339 -> texto relativo en español ("hace 3 días") para el
+ * tooltip de último commit — evita mostrar un ISO crudo poco legible. */
+function formatRelativeDate(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const days = Math.floor((Date.now() - then) / 86_400_000);
+  if (days <= 0) return "hoy";
+  if (days === 1) return "hace 1 día";
+  if (days < 30) return `hace ${days} días`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return months === 1 ? "hace 1 mes" : `hace ${months} meses`;
+  const years = Math.floor(days / 365);
+  return years === 1 ? "hace 1 año" : `hace ${years} años`;
 }
 
 /** Recorta `label` con "…" hasta que quepa en `maxWidth`, midiendo con

@@ -55,6 +55,17 @@ pub struct NodeMetadata {
     /// defecto, rombo para datos, etc.), no su color.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<String>,
+    /// Autor del último commit que tocó este archivo/carpeta — heurística
+    /// vía `git log` (ver extractor::git_blame), no un `git blame` línea
+    /// por línea real. `None` si el proyecto no es un repo git, no hay
+    /// `git` instalado, o el nodo no tiene commits propios.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_author: Option<String>,
+    /// Fecha (RFC3339) del último commit — ver `last_author`. Para
+    /// carpetas y la raíz es el máximo entre sus hijos directos (el
+    /// archivo modificado más recientemente en ese subárbol).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

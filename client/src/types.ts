@@ -29,6 +29,11 @@ export interface NodeMetadata {
   /** Familia visual por formato — decide la FORMA del nodo (círculo por
    * defecto si no está presente), un eje aparte de `category`/color. */
   shape?: FileShape;
+  /** Autor del último commit que tocó este nodo (heurística vía `git log`,
+   * no un `git blame` línea por línea real). */
+  last_author?: string;
+  /** Fecha RFC3339 del último commit — ver `last_author`. */
+  last_modified?: string;
   [key: string]: unknown;
 }
 
