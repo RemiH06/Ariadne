@@ -1,3 +1,4 @@
+mod pages;
 mod pandoc;
 
 use crate::schema::{Graph, GraphNode, NodeType};
@@ -6,6 +7,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+pub use pages::{build_doc_pages, DocPage};
 pub use pandoc::{check_available, PandocOptions};
 
 /// Construye el Markdown canónico que alimenta a Pandoc para todos los

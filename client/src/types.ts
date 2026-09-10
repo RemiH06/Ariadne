@@ -37,6 +37,10 @@ export interface NodeMetadata {
   /** Últimos commits que tocaron este archivo, más reciente primero. Solo
    * en nodos `file` — alimenta la acción "ver historial" al seleccionarlo. */
   recent_commits?: CommitInfo[];
+  /** Slug de la página de documentación asociada (ver `[[docs.pages]]` de
+   * conf.ariadne) — el nodo se marca con una estrella y el panel de
+   * selección ofrece "ir a documentación" cuando está presente. */
+  doc_slug?: string;
   [key: string]: unknown;
 }
 

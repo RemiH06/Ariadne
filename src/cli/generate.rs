@@ -1,6 +1,6 @@
 use crate::config::{AriadneConfig, HtmlConfig};
 use crate::extractor::build_graph;
-use crate::render::docs::{check_available, render_docs, PandocOptions};
+use crate::render::docs::{build_doc_pages, check_available, render_docs, PandocOptions};
 use crate::render::html::render_html;
 use crate::utils::slugify;
 use anyhow::{bail, Context, Result};
@@ -77,9 +77,20 @@ pub fn run(args: GenerateArgs) -> Result<()> {
     };
 
     println!("Analizando {}...", root.display());
-    let graph = build_graph(&root, &title, &cfg.ignore)
+    let mut graph = build_graph(&root, &title, &cfg.ignore)
         .with_context(|| format!("no se pudo analizar el proyecto en {}", root.display()))?;
     println!("{} nodos encontrados.", graph.nodes.len());
+
+    // Páginas de documentación (mapeo explícito de conf.ariadne, ver
+    // [[docs.pages]]) — build_graph no sabe nada de esto, es responsabilidad
+    // del orquestador. Falla fuerte si una entrada está mal (nodo
+    // inexistente o archivo no encontrado), antes de escribir nada.
+    let doc_pages = build_doc_pages(&graph, &root, &cfg.docs.pages)?;
+    for page in &doc_pages {
+        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == page.node_id) {
+            node.metadata.doc_slug = Some(page.slug.clone());
+        }
+    }
 
     let out_dir = PathBuf::from(&cfg.output.dir);
     std::fs::create_dir_all(&out_dir)
@@ -88,7 +99,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
     let slug = slugify(&title);
 
     if cfg.output.formats.iter().any(|f| f == "html") {
-        let html = render_html(&graph, &title, &cfg.output.html, &cfg.filters)?;
+        let html = render_html(&graph, &title, &cfg.output.html, &cfg.filters, &doc_pages)?;
         let out_path = out_dir.join(format!("{slug}.html"));
         std::fs::write(&out_path, html)
             .with_context(|| format!("no se pudo escribir {}", out_path.display()))?;

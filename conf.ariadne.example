@@ -60,3 +60,13 @@ extra = ["scratch/", "*.tmp"]
 
 [languages]
 detect = "auto"
+
+# Páginas de documentación conectadas a nodos del grafo: mapeo explícito,
+# nada de auto-descubrimiento por convención. `node` debe matchear el id
+# (ruta relativa) de un nodo del diagrama; `file` es un Markdown, relativo
+# a la raíz del proyecto. El nodo se marca con una estrella en el diagrama
+# y gana un botón "Ir a documentación" al seleccionarlo — las páginas se
+# ven como un menú navegable aparte, debajo del diagrama en el mismo HTML.
+# [[docs.pages]]
+# node = "src/auth.py"
+# file = "docs/auth.md"

@@ -32,6 +32,8 @@ const TEXT_HALO_WIDTH = 3 * NODE_SCALE;
 const LAYOUT_TRANSITION_MS = 600; // duración del reacomodo animado al colapsar/expandir o cambiar de dirección
 const LAYOUT_TRANSITION_NAME = "ariadne-layout"; // nombrada para que un render nuevo interrumpa limpio al anterior en vez de competir
 const DIMMED_OPACITY = 0.18; // opacidad de los nodos no relacionados al enfocar uno
+const STAR_BADGE_SIZE = 13 * NODE_SCALE; // tamaño del badge de "tiene documentación"
+const STAR_BADGE_INSET = 3 * NODE_SCALE; // separación del badge respecto al borde de la figura
 
 interface BoxGeom {
   width: number;
@@ -487,6 +489,23 @@ export class DiagramRenderer {
       const tooltipText = tooltipTextById.get(node.id);
       if (tooltipText) {
         shape.append("title").text(tooltipText);
+      }
+
+      // Estrella: el nodo tiene una página de documentación asociada
+      // ([[docs.pages]] de conf.ariadne) — badge en la esquina superior
+      // derecha, aparte del ícono de lenguaje (que ya ocupa la izquierda).
+      if (node.metadata.doc_slug) {
+        const badgeCenter = isRowShape(kind)
+          ? { x: geom.width / 2 - STAR_BADGE_SIZE / 2 - STAR_BADGE_INSET, y: -geom.height / 2 + geom.tabHeight / 2 + STAR_BADGE_SIZE / 2 + STAR_BADGE_INSET }
+          : { x: geom.radius * 0.72, y: -geom.radius * 0.72 };
+        group
+          .append("use")
+          .attr("class", "ariadne-node-doc-star")
+          .attr("href", "#icon-doc-star")
+          .attr("width", STAR_BADGE_SIZE)
+          .attr("height", STAR_BADGE_SIZE)
+          .attr("x", badgeCenter.x - STAR_BADGE_SIZE / 2)
+          .attr("y", badgeCenter.y - STAR_BADGE_SIZE / 2);
       }
 
       // El "lomo" del libro: un par de líneas verticales cerca del borde

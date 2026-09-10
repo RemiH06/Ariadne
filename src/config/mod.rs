@@ -10,6 +10,7 @@ pub struct AriadneConfig {
     pub filters: FilterConfig,
     pub ignore: IgnoreConfig,
     pub languages: LanguagesConfig,
+    pub docs: DocsConfig,
 }
 
 impl Default for AriadneConfig {
@@ -20,6 +21,7 @@ impl Default for AriadneConfig {
             filters: FilterConfig::default(),
             ignore: IgnoreConfig::default(),
             languages: LanguagesConfig::default(),
+            docs: DocsConfig::default(),
         }
     }
 }
@@ -277,4 +279,23 @@ impl Default for LanguagesConfig {
             detect: "auto".to_string(),
         }
     }
+}
+
+/// Mapeo explícito de páginas de documentación a nodos del grafo — ver
+/// `render::docs::build_doc_pages`. A propósito NO hay auto-descubrimiento
+/// por convención de carpetas/nombres: el usuario escribe sus `.md` donde
+/// quiera y los asocia acá, uno por uno.
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[serde(default)]
+pub struct DocsConfig {
+    pub pages: Vec<DocPageConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[serde(default)]
+pub struct DocPageConfig {
+    /// Debe matchear el `id` (ruta relativa) de un nodo del grafo.
+    pub node: String,
+    /// Ruta al archivo Markdown, relativa a la raíz del proyecto.
+    pub file: String,
 }

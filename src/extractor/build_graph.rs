@@ -54,6 +54,7 @@ pub fn build_graph(root: &Path, project_name: &str, ignore_cfg: &IgnoreConfig) -
                     last_author: None,
                     last_modified: None,
                     recent_commits: None,
+                    doc_slug: None,
                     extra: Default::default(),
                 },
             }

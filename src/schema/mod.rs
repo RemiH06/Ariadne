@@ -83,6 +83,12 @@ pub struct NodeMetadata {
     /// alimenta la acción "ver historial" al seleccionar un nodo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_commits: Option<Vec<CommitInfo>>,
+    /// Slug de la página de documentación asociada a este nodo, si hay
+    /// alguna declarada en `[[docs.pages]]` de `conf.ariadne` — ver
+    /// `render::docs`. El cliente usa esto para marcar el nodo con una
+    /// estrella y ofrecer "ir a documentación".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doc_slug: Option<String>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }

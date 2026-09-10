@@ -6,6 +6,18 @@ import type { Graph, GraphNode, RenderConfig } from "./types.js";
 
 const NO_SELECTION_LABEL = "Hacé click en un nodo para ver su información.";
 
+/** Muestra la página de documentación `slug` en `#ariadne-docs` (la marca
+ * activa en el nav, oculta las demás) — usada tanto al clickear un item
+ * del nav como desde "Ir a documentación" en el panel de selección. */
+function showDocPage(slug: string): void {
+  document.querySelectorAll<HTMLButtonElement>(".ariadne-docs-nav-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.docSlug === slug);
+  });
+  document.querySelectorAll<HTMLElement>(".ariadne-doc-page").forEach((article) => {
+    article.hidden = article.id !== `ariadne-doc-${slug}`;
+  });
+}
+
 /** Actualiza el contenido del panel de "Nodo seleccionado" (su propio panel
  * a la derecha, con pestaña independiente — no se muestra/oculta según el
  * focus, eso lo controla el usuario con la pestaña) y arma la lista de
@@ -13,20 +25,31 @@ const NO_SELECTION_LABEL = "Hacé click en un nodo para ver su información.";
  * el DOM). */
 function updateSelectionPanel(node: GraphNode | null): void {
   const label = document.getElementById("ariadne-selection-label");
+  const gotoDocsBtn = document.getElementById("ariadne-goto-docs-btn") as HTMLButtonElement | null;
   const historyBtn = document.getElementById("ariadne-history-btn") as HTMLButtonElement | null;
   const historyList = document.getElementById("ariadne-history-list");
-  if (!label || !historyBtn || !historyList) return;
+  if (!label || !gotoDocsBtn || !historyBtn || !historyList) return;
 
   historyList.hidden = true;
   historyList.replaceChildren();
 
   if (!node) {
     label.textContent = NO_SELECTION_LABEL;
+    gotoDocsBtn.hidden = true;
     historyBtn.hidden = true;
     return;
   }
 
   label.textContent = node.label;
+
+  const docSlug = node.metadata.doc_slug;
+  gotoDocsBtn.hidden = !docSlug;
+  if (docSlug) {
+    gotoDocsBtn.onclick = () => {
+      showDocPage(docSlug);
+      document.getElementById("ariadne-docs")?.scrollIntoView({ behavior: "smooth" });
+    };
+  }
 
   const commits = node.metadata.recent_commits ?? [];
   historyBtn.hidden = commits.length === 0;
@@ -148,6 +171,14 @@ function main(): void {
     });
   });
   setActiveDirectionButton(renderer.getDirection());
+
+  const docsNav = document.getElementById("ariadne-docs-nav");
+  docsNav?.addEventListener("click", (event) => {
+    const item = (event.target as HTMLElement).closest<HTMLButtonElement>(".ariadne-docs-nav-item");
+    if (item?.dataset.docSlug) showDocPage(item.dataset.docSlug);
+  });
+  const firstDocsNavItem = document.querySelector<HTMLButtonElement>(".ariadne-docs-nav-item");
+  if (firstDocsNavItem?.dataset.docSlug) showDocPage(firstDocsNavItem.dataset.docSlug);
 
   rerender();
 }
