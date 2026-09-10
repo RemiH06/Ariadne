@@ -31,6 +31,7 @@ const OVERFLOW_RESERVE = 16 * NODE_SCALE; // margen extra que el layout reserva 
 const TEXT_HALO_WIDTH = 3 * NODE_SCALE;
 const LAYOUT_TRANSITION_MS = 600; // duración del reacomodo animado al colapsar/expandir o cambiar de dirección
 const LAYOUT_TRANSITION_NAME = "ariadne-layout"; // nombrada para que un render nuevo interrumpa limpio al anterior en vez de competir
+const DIMMED_OPACITY = 0.18; // opacidad de los nodos no relacionados al enfocar uno
 
 interface BoxGeom {
   width: number;
@@ -204,6 +205,25 @@ export class DiagramRenderer {
     // de hacer que todo el árbol se desvanezca desde el centro.
     const isFirstRender = this.lastPositionById.size === 0;
 
+    // Nodos relacionados al focus actual (si hay uno) — se calcula ACÁ,
+    // antes de animar la opacidad de los nodos más abajo, porque esa misma
+    // transición necesita saber a qué opacidad final debe llegar cada nodo
+    // (si se calculara después, la transición ya habría fijado opacidad 1
+    // en todos vía estilo inline, que le gana en especificidad CSS a la
+    // clase `ariadne-dimmed` — así se rompió el oscurecido la primera vez).
+    const relatedIds: Set<string> | null = this.focusedId
+      ? (() => {
+          const related = refEdges.filter((e) => e.source === this.focusedId || e.target === this.focusedId);
+          const ids = new Set<string>([this.focusedId]);
+          for (const e of related) {
+            ids.add(e.source);
+            ids.add(e.target);
+          }
+          return ids;
+        })()
+      : null;
+    const isDimmed = (d: HierarchyNode<TreeNode>) => relatedIds !== null && !relatedIds.has(this.graphNode(d).id);
+
     // Las capas de referencias/focus son 100% condicionales (aparecen y
     // desaparecen según filtros/estado) — se recrean desde cero en cada
     // render, a diferencia de nodos/links de abajo que ahora persisten
@@ -375,7 +395,7 @@ export class DiagramRenderer {
     nodeGroups
       .transition(LAYOUT_TRANSITION_NAME)
       .duration(isFirstRender ? 0 : LAYOUT_TRANSITION_MS)
-      .style("opacity", 1)
+      .style("opacity", (d) => (isDimmed(d) ? DIMMED_OPACITY : 1))
       .attr("transform", (d) => {
         const p = positionById.get(this.graphNode(d).id)!;
         return `translate(${p.center.x},${p.center.y}) scale(1)`;
@@ -549,15 +569,10 @@ export class DiagramRenderer {
     nodeGroups.classed("ariadne-dimmed", false).classed("ariadne-focused", false);
 
     // Focus de nodo: resalta sus referencias directas (entrantes y
-    // salientes) con flechas dirigidas, atenuando el resto del diagrama.
-    if (this.focusedId) {
-      const related = refEdges.filter((e) => e.source === this.focusedId || e.target === this.focusedId);
-      const relatedIds = new Set<string>([this.focusedId]);
-      for (const e of related) {
-        relatedIds.add(e.source);
-        relatedIds.add(e.target);
-      }
-
+    // salientes) con flechas dirigidas, atenuando el resto del diagrama
+    // (la opacidad en sí ya se animó arriba vía `isDimmed`/`relatedIds`;
+    // acá solo se marcan las clases para el glow y otros estilos por CSS).
+    if (this.focusedId && relatedIds) {
       nodeGroups
         .classed("ariadne-dimmed", (d) => !relatedIds.has(this.graphNode(d).id))
         .classed("ariadne-focused", (d) => this.graphNode(d).id === this.focusedId);
@@ -572,6 +587,7 @@ export class DiagramRenderer {
         .attr("stroke-width", 2)
         .attr("marker-end", "url(#arrow-focus)");
 
+      const related = refEdges.filter((e) => e.source === this.focusedId || e.target === this.focusedId);
       focusLayer
         .selectAll("path")
         .data(related)

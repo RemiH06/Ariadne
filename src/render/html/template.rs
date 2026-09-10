@@ -243,11 +243,8 @@ pub fn render(input: TemplateInput) -> String {
     pointer-events: none;
     user-select: none;
   }}
-  .ariadne-node, .ariadne-links path, .ariadne-ref-links path {{
+  .ariadne-links path, .ariadne-ref-links path {{
     transition: opacity 0.15s ease;
-  }}
-  .ariadne-node.ariadne-dimmed {{
-    opacity: 0.18;
   }}
   .ariadne-node.ariadne-focused .ariadne-node-box {{
     filter: url(#focus-glow);
@@ -292,10 +289,12 @@ pub fn render(input: TemplateInput) -> String {
     <marker id="arrow-focus" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="{accent}"/>
     </marker>
-    <filter id="focus-glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+    <filter id="focus-glow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 6 0" result="halo"/>
       <feMerge>
-        <feMergeNode in="blur"/>
+        <feMergeNode in="halo"/>
+        <feMergeNode in="halo"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
