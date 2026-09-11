@@ -1,6 +1,6 @@
 ![Built with Love](https://forthebadge.com/images/badges/built-with-love.svg)
 ![Uses Git](https://forthebadge.com/images/badges/uses-git.svg)
-![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
+![Made with Rust](https://forthebadge.com/images/badges/made-with-rust.svg)
 
 ```
  █████╗ ██████╗ ██╗ █████╗ ██████╗ ███╗   ██╗███████╗
@@ -153,7 +153,10 @@ integración contra `fixtures/sample-project`.
 
 ## 📄 Licencia
 
-Distribuido bajo AGPL-3.0.
+Distribuido bajo [AGPL-3.0](LICENSE). Cualquier fork o versión
+modificada, incluso si corre solo como servicio web sin distribuir el
+binario, tiene que seguir siendo de código abierto bajo la misma
+licencia.
 
 ---
 
