@@ -283,8 +283,10 @@ impl Default for LanguagesConfig {
 
 /// Mapeo explícito de páginas de documentación a nodos del grafo — ver
 /// `render::docs::build_doc_pages`. A propósito NO hay auto-descubrimiento
-/// por convención de carpetas/nombres: el usuario escribe sus `.md` donde
-/// quiera y los asocia acá, uno por uno.
+/// por convención de carpetas/nombres: el usuario decide qué nodo se
+/// conecta a qué URL, uno por uno. Ariadne no renderiza ni embebe nada de
+/// esa documentación — el nodo se marca con una estrella y el panel de
+/// selección ofrece un link directo a `url`.
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(default)]
 pub struct DocsConfig {
@@ -296,6 +298,8 @@ pub struct DocsConfig {
 pub struct DocPageConfig {
     /// Debe matchear el `id` (ruta relativa) de un nodo del grafo.
     pub node: String,
-    /// Ruta al archivo Markdown, relativa a la raíz del proyecto.
-    pub file: String,
+    /// URL o ruta a la que "Ir a documentación" redirige — relativa (a la
+    /// carpeta de salida del HTML) o absoluta, lo que tenga sentido para
+    /// dónde vive esa documentación.
+    pub url: String,
 }

@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ariadne: diagrama y documentación de proyectos</title>
+<meta name="description" content="Ariadne analiza un proyecto de código y genera un diagrama HTML interactivo y documentación exportable, el hilo para no perderte en un codebase tuyo o ajeno.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2312141c'/%3E%3Cg clip-path='url(%23c)'%3E%3Cpath d='M15,15 L85,15 L85,85 L15,85 L15,25' fill='none' stroke='%236c93f5' stroke-width='6'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --bg-alt: #181825;
+    --surface: #262637;
+    --surface-2: #313244;
+    --text: #cdd6f4;
+    --text-dim: #a6adc8;
+    --line: #45475a;
+    --accent: #89b4fa;
+    --accent-2: #f9e2af;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    /* Misma tipografía que usa el propio diagrama (client/src/render.ts:
+    "system-ui, sans-serif"), sin agregar una fuente decorativa nueva solo
+    para el sitio. Un eje de consistencia real, no un default sin pensar. */
+    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    --display: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.65;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  /* ---------- intro: un hilo se dibuja solo cruzando el hero, una vez ---------- */
+
+  .thread-intro {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .thread-intro path {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    opacity: 0.8;
+  }
+
+  /* Sin JS, el hilo ya está completo y quieto (no depende de nada para
+  verse bien). El script solo lo anima dibujándose, y solo si logra correr. */
+
+  /* ---------- hero ---------- */
+
+  header.hero {
+    position: relative;
+    overflow: hidden;
+    padding: 96px 0 72px;
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse 800px 400px at 15% -10%, rgba(137, 180, 250, 0.12), transparent),
+      radial-gradient(ellipse 600px 400px at 90% 10%, rgba(249, 226, 175, 0.06), transparent);
+  }
+
+  .hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+
+  .hero-badge {
+    width: 84px;
+    height: 84px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 8px 24px rgba(108, 147, 245, 0.35));
+    will-change: transform;
+  }
+
+  .hero-title {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(48px, 8vw, 88px);
+    letter-spacing: 0.01em;
+    margin: 0;
+    line-height: 1;
+  }
+
+  .hero-subtitle {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(16px, 2.2vw, 21px);
+    color: var(--text-dim);
+    max-width: 34em;
+    margin: 22px 0 0;
+  }
+
+  .hero-tag {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 18px;
+    opacity: 0.75;
+  }
+
+  /* ---------- reveal genérico: oculto por defecto solo si el JS corre ---------- */
+
+  .reveal { opacity: 0; transform: translateY(18px); }
+  .js-ready .reveal { opacity: 0; transform: translateY(18px); }
+  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.6s ease, transform 0.6s ease; }
+  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+
+  /* ---------- descripción ---------- */
+
+  .intro-section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+
+  .intro-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 48px;
+    align-items: start;
+  }
+
+  @media (max-width: 760px) { .intro-grid { grid-template-columns: 1fr; } }
+
+  .intro-grid h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(26px, 3.4vw, 36px);
+    line-height: 1.15;
+    margin: 0 0 18px;
+  }
+
+  .intro-grid p { color: var(--text-dim); margin: 0 0 14px; }
+
+  .quote {
+    position: relative;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 21px;
+    line-height: 1.45;
+    padding: 6px 0 0 8px;
+    margin: 0;
+  }
+
+  .quote::before {
+    content: "\201C";
+    display: block;
+    font-family: Georgia, serif;
+    font-size: 64px;
+    line-height: 0.5;
+    color: var(--line);
+    margin-bottom: 6px;
+  }
+
+  .quote span { display: block; font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin-top: 12px; }
+
+  /* ---------- highlights (diff) ---------- */
+
+  .highlights-section { padding: 64px 0; background: var(--bg-alt); border-bottom: 1px solid var(--line); }
+
+  .highlights-heading {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0 0 24px;
+  }
+
+  pre.diff {
+    font-family: var(--mono);
+    font-size: 14.5px;
+    line-height: 1.9;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 26px;
+    overflow-x: auto;
+    margin: 0;
+  }
+
+  pre.diff .plus { color: var(--green); }
+  pre.diff .minus { color: var(--red); }
+
+  /* ---------- el diagrama, incrustado como forma de navegar ---------- */
+
+  .diagram-section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+
+  .diagram-section h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(24px, 3vw, 32px);
+    margin: 0 0 10px;
+  }
+
+  .diagram-section > .wrap > p { color: var(--text-dim); max-width: 46em; margin: 0 0 28px; }
+
+  .diagram-section .star { color: var(--accent-2); }
+
+  .diagram-frame-wrap {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+
+  .diagram-frame-wrap iframe {
+    display: block;
+    width: 100%;
+    height: 640px;
+    border: 0;
+    background: var(--bg);
+  }
+
+  /* ---------- grid de páginas ---------- */
+
+  .pages-section { padding: 72px 0 88px; }
+
+  .pages-section h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(24px, 3vw, 32px);
+    margin: 0 0 28px;
+  }
+
+  .pages-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+  }
+
+  .page-card {
+    display: block;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 22px 24px;
+    transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+  }
+
+  .page-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    background: var(--surface-2);
+  }
+
+  .page-card .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    opacity: 0.8;
+  }
+
+  .page-card h3 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    margin: 10px 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .page-card h3 .go {
+    font-family: var(--mono);
+    font-size: 15px;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .page-card:hover h3 .go { opacity: 1; transform: none; }
+  .page-card .num { transition: opacity 0.25s ease; }
+  .page-card:hover .num { opacity: 1; }
+
+  .page-card p { margin: 0; font-size: 14px; color: var(--text-dim); }
+
+  /* ---------- footer ---------- */
+
+  footer { padding: 40px 0 64px; }
+
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 14px;
+    color: var(--text-dim);
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+  }
+
+  .footer-row a { color: var(--text-dim); }
+  .footer-row a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <svg class="thread-intro" viewBox="0 0 1080 400" preserveAspectRatio="none" aria-hidden="true">
+    <path id="thread-path" d="M -20,55 C 150,20 300,75 460,40 S 680,15 850,60 1000,80 1100,35" />
+    <path id="thread-path-2" d="M 1100,360 C 1000,345 850,378 680,352 S 460,382 300,340 150,365 -20,355" />
+  </svg>
+  <div class="wrap hero-inner">
+    <svg class="hero-badge" id="hero-badge" viewBox="0 0 100 100" role="img" aria-label="Logo de Ariadne">
+      <defs><clipPath id="badge-clip"><rect width="100" height="100" rx="22"/></clipPath></defs>
+      <rect width="100" height="100" rx="22" fill="#12141c"/>
+      <g clip-path="url(#badge-clip)">
+        <path d="M15,15 L85,15 L85,85 L15,85 L15,25" fill="none" stroke="#6c93f5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M15,25 L75,25 L75,75 L25,75 L25,35" fill="none" stroke="#33488f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M25,35 L65,35 L65,65 L35,65 L35,45" fill="none" stroke="#6c93f5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M35,45 L55,45 L55,55 L45,55" fill="none" stroke="#33488f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <g transform="translate(50,50) rotate(45)">
+          <rect x="-3.4" y="-63" width="6.8" height="126" rx="3.4" fill="#e7ebf6"/>
+          <circle cx="0" cy="-46" r="4.6" fill="#12141c" stroke="#e7ebf6" stroke-width="2.2"/>
+        </g>
+      </g>
+    </svg>
+    <div>
+      <h1 class="hero-title">Ariadne</h1>
+      <p class="hero-subtitle">El hilo para no perderte en un codebase, tuyo o de alguien más.</p>
+      <p class="hero-tag">ariadne generate . &nbsp;→&nbsp; un diagrama interactivo, autocontenido, en un solo HTML</p>
+    </div>
+  </div>
+</header>
+
+<section class="intro-section">
+  <div class="wrap intro-grid">
+    <div class="reveal">
+      <h2>Genera el mapa de tu proyecto con un solo comando</h2>
+      <p>Ariadne analiza un proyecto (árbol de archivos, dependencias reales entre ellos, clases y métodos, historial de git) y arma un diagrama HTML interactivo. Nada de dibujarlo a mano ni de que quede desactualizado, se regenera cada vez que corres el comando.</p>
+      <p>Usa heurística de texto en vez de un parser AST real, por eso soporta 15 lenguajes distintos sin necesitar una gramática propia para cada uno. Se documenta a sí misma con la misma herramienta: este sitio incluye su propio diagrama más abajo.</p>
+    </div>
+    <blockquote class="quote reveal">
+      El hilo de Ariadna no dibuja el laberinto, solo te deja encontrar el camino de vuelta.
+      <span>Mismo principio, aplicado a un repositorio</span>
+    </blockquote>
+  </div>
+</section>
+
+<section class="highlights-section">
+  <div class="wrap">
+    <p class="highlights-heading reveal">Lo que hace, y lo que no</p>
+    <pre class="diff reveal"><span class="plus">+ Diagrama HTML interactivo y autocontenido, funciona con file:// o en GitHub Pages</span>
+<span class="plus">+ 15 lenguajes: referencias entre archivos, clases/métodos/atributos, dependencias declaradas</span>
+<span class="plus">+ Autor y fecha de git por archivo, colorear por antigüedad, "ver historial", link a documentación propia</span>
+<span class="plus">+ Exporta a PDF/LaTeX/RTF/XML vía Pandoc, desde el mismo grafo</span>
+<span class="minus">- No es un parser AST real: es heurística de texto, se rompe con macros o metaprogramación poco convencional</span>
+<span class="minus">- No hace blame línea por línea: para eso, abre el archivo directo</span></pre>
+  </div>
+</section>
+
+<section class="diagram-section">
+  <div class="wrap">
+    <h2 class="reveal">Navega la documentación desde aquí</h2>
+    <p class="reveal">Este es el propio diagrama de Ariadne, generado por Ariadne, y es interactivo de verdad: colapsa carpetas, cambia de orientación, activa filtros. Los nodos marcados con <span class="star">★</span> tienen una página propia. Selecciona uno y usa "Ir a documentación" en el panel derecho para saltar directo al contenido, o sigue leyendo las 4 páginas de abajo en orden.</p>
+    <div class="diagram-frame-wrap reveal">
+      <iframe src="ariadne.html" title="Diagrama interactivo de Ariadne" loading="lazy"></iframe>
+    </div>
+  </div>
+</section>
+
+<section class="pages-section">
+  <div class="wrap">
+    <h2 class="reveal">Las 4 páginas, directo</h2>
+    <div class="pages-grid">
+      <a class="page-card reveal" href="architecture.html">
+        <span class="num">01</span>
+        <h3>Arquitectura <span class="go">→</span></h3>
+        <p>El pipeline completo y por qué usa heurística de texto en vez de un parser AST.</p>
+      </a>
+      <a class="page-card reveal" href="extending-languages.html">
+        <span class="num">02</span>
+        <h3>Agregar un lenguaje <span class="go">→</span></h3>
+        <p>El patrón compartido entre extractores, y cómo sumar uno nuevo.</p>
+      </a>
+      <a class="page-card reveal" href="git-integration.html">
+        <span class="num">03</span>
+        <h3>Integración con git <span class="go">→</span></h3>
+        <p>Por qué usa git log por CLI, y por qué el historial se precalcula.</p>
+      </a>
+      <a class="page-card reveal" href="docs-linking.html">
+        <span class="num">04</span>
+        <h3>Vincular documentación <span class="go">→</span></h3>
+        <p>Cómo funciona [[docs.pages]]. Esta misma página lo explica.</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-row">
+      <span>Ariadne</span>
+      <a href="https://github.com/RemiH06/Ariadne">github.com/RemiH06/Ariadne</a>
+      <span>Licencia AGPL-3.0</span>
+      <span>by Hex (@RemiH06)</span>
+    </div>
+  </div>
+</footer>
+
+<script type="module">
+  import { animate, inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
+
+  // Si este import falla, .js-ready nunca se agrega y todo el contenido ya
+  // es visible por default (ver ".reveal" en el CSS). Nada se rompe.
+  document.body.classList.add("js-ready");
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // --- el hilo traza una ruta distinta cada carga (jitter calculado una
+  // sola vez, no por frame), como si Ariadna encontrara un camino nuevo
+  // cada vez que entras. El fallback sin JS es la curva original fija.
+  // Los puntos se mantienen en la franja superior del hero (fuera del
+  // bloque de título/badge) para que el trazo no quede tapado detrás del
+  // contenido. El dibujado usa "pathLength" de Motion (documentado para
+  // esto), no strokeDasharray/strokeDashoffset a mano: esa versión anterior
+  // dejaba el trazo oculto para siempre porque animate() no interpola esa
+  // propiedad, motion.dev no la lista como soportada.
+  //
+  // Al terminar, un segundo hilo cruza más abajo (entre el texto y la
+  // línea que separa al hero de la siguiente sección) en sentido contrario,
+  // como si el mismo hilo volviera buscando otra salida. Se usa la opción
+  // "delay" de la propia animación (fill:"both" internamente, confirmado
+  // en el bundle real), no un setTimeout aparte: eso dejaba la segunda
+  // línea visible completa mientras esperaba, porque nadie la ocultaba
+  // hasta que el timeout disparara. Con delay, pathLength:0 se sostiene
+  // desde el primer frame durante toda la espera. ---
+  const jitter = (base, range) => Math.round(base + (Math.random() * 2 - 1) * range);
+  const threadPath = document.getElementById("thread-path");
+  const threadPath2 = document.getElementById("thread-path-2");
+  if (!reduced) {
+    if (threadPath) {
+      const d = [
+        "M", [-20, jitter(55, 10)],
+        "C", [150, jitter(20, 12)], [300, jitter(75, 12)], [460, jitter(40, 12)],
+        "S", [680, jitter(15, 12)], [850, jitter(60, 12)],
+        [1000, jitter(80, 12)], [1100, jitter(35, 10)],
+      ].join(" ");
+      threadPath.setAttribute("d", d);
+      animate(threadPath, { pathLength: [0, 1] }, { duration: 2.2, easing: [0.22, 1, 0.36, 1] });
+    }
+    if (threadPath2) {
+      const d2 = [
+        "M", [1100, jitter(360, 8)],
+        "C", [1000, jitter(345, 10)], [850, jitter(378, 10)], [680, jitter(352, 10)],
+        "S", [460, jitter(382, 8)], [300, jitter(340, 10)],
+        [150, jitter(365, 10)], [-20, jitter(355, 8)],
+      ].join(" ");
+      threadPath2.setAttribute("d", d2);
+      animate(threadPath2, { pathLength: [0, 1] }, { duration: 2.2, delay: 2.2, easing: [0.22, 1, 0.36, 1] });
+    }
+  }
+
+  // --- el badge del logo sigue el mouse dentro del hero, apenas un poco.
+  // Es el mismo hilo de la intro, responde a por dónde pasa el cursor, no
+  // decora porque sí. En reposo, la aguja titubea sola buscando dirección,
+  // como una brújula real, y se pausa apenas el cursor entra al hero.
+  // Se apaga entera con reduced motion (queda quieta).
+  const badge = document.getElementById("hero-badge");
+  const hero = document.querySelector("header.hero");
+  if (badge && hero && !reduced) {
+    let hovering = false;
+    const idleWobble = () => {
+      if (hovering) return;
+      const targetRotate = (Math.random() - 0.5) * 6;
+      const targetY = (Math.random() - 0.5) * 4;
+      animate(badge, { rotate: targetRotate, y: targetY }, { duration: 1.8, easing: [0.33, 1, 0.68, 1] });
+    };
+    idleWobble();
+    setInterval(idleWobble, 2600);
+    hero.addEventListener("mousemove", (event) => {
+      hovering = true;
+      const rect = hero.getBoundingClientRect();
+      const px = (event.clientX - rect.left) / rect.width - 0.5;
+      const py = (event.clientY - rect.top) / rect.height - 0.5;
+      animate(badge, { rotate: px * 8, y: py * 6 }, { duration: 0.4, easing: "ease-out" });
+    });
+    hero.addEventListener("mouseleave", () => {
+      hovering = false;
+      animate(badge, { rotate: 0, y: 0 }, { duration: 0.5, easing: "ease-out" });
+    });
+  }
+
+  // --- reveals sutiles al entrar en viewport, escalonados dentro de cada sección ---
+  const sections = document.querySelectorAll(".intro-section, .highlights-section, .diagram-section, .pages-section");
+  sections.forEach((section) => {
+    const items = section.querySelectorAll(".reveal");
+    if (reduced) {
+      items.forEach((el) => el.classList.add("in"));
+      return;
+    }
+    inView(section, () => {
+      items.forEach((el, i) => {
+        setTimeout(() => el.classList.add("in"), i * 90);
+      });
+    }, { amount: 0.2 });
+    // Red de seguridad: si inView nunca dispara para esta sección, el
+    // contenido no debe quedar invisible para siempre.
+    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
+  });
+</script>
+</body>
+</html>

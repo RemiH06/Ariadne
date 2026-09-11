@@ -4,52 +4,38 @@ import { LAYOUT_MODES, type LayoutMode } from "./layout.js";
 import { DiagramRenderer, formatRelativeDate } from "./render.js";
 import type { Graph, GraphNode, RenderConfig } from "./types.js";
 
-const NO_SELECTION_LABEL = "Hacé click en un nodo para ver su información.";
-
-/** Muestra la página de documentación `slug` en `#ariadne-docs` (la marca
- * activa en el nav, oculta las demás) — usada tanto al clickear un item
- * del nav como desde "Ir a documentación" en el panel de selección. */
-function showDocPage(slug: string): void {
-  document.querySelectorAll<HTMLButtonElement>(".ariadne-docs-nav-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.docSlug === slug);
-  });
-  document.querySelectorAll<HTMLElement>(".ariadne-doc-page").forEach((article) => {
-    article.hidden = article.id !== `ariadne-doc-${slug}`;
-  });
-}
+const NO_SELECTION_LABEL = "Haz clic en un nodo para ver su información.";
 
 /** Actualiza el contenido del panel de "Nodo seleccionado" (su propio panel
- * a la derecha, con pestaña independiente — no se muestra/oculta según el
- * focus, eso lo controla el usuario con la pestaña) y arma la lista de
- * "ver historial" (vacía hasta el primer click, después queda cacheada en
+ * a la derecha, con pestaña independiente, no se muestra ni se oculta según
+ * el focus, eso lo controla el usuario con la pestaña) y arma la lista de
+ * "ver historial" (vacía hasta el primer clic, después queda cacheada en
  * el DOM). */
 function updateSelectionPanel(node: GraphNode | null): void {
   const label = document.getElementById("ariadne-selection-label");
-  const gotoDocsBtn = document.getElementById("ariadne-goto-docs-btn") as HTMLButtonElement | null;
+  const gotoDocsLink = document.getElementById("ariadne-goto-docs-btn") as HTMLAnchorElement | null;
   const historyBtn = document.getElementById("ariadne-history-btn") as HTMLButtonElement | null;
   const historyList = document.getElementById("ariadne-history-list");
-  if (!label || !gotoDocsBtn || !historyBtn || !historyList) return;
+  if (!label || !gotoDocsLink || !historyBtn || !historyList) return;
 
   historyList.hidden = true;
   historyList.replaceChildren();
 
   if (!node) {
     label.textContent = NO_SELECTION_LABEL;
-    gotoDocsBtn.hidden = true;
+    gotoDocsLink.hidden = true;
     historyBtn.hidden = true;
     return;
   }
 
   label.textContent = node.label;
 
-  const docSlug = node.metadata.doc_slug;
-  gotoDocsBtn.hidden = !docSlug;
-  if (docSlug) {
-    gotoDocsBtn.onclick = () => {
-      showDocPage(docSlug);
-      document.getElementById("ariadne-docs")?.scrollIntoView({ behavior: "smooth" });
-    };
-  }
+  // "Ir a documentación" es un link normal — Ariadne no renderiza ni
+  // embebe nada de esa página, solo redirige (se abre en una pestaña
+  // nueva para no perder el estado del diagrama).
+  const docUrl = node.metadata.doc_url;
+  gotoDocsLink.hidden = !docUrl;
+  if (docUrl) gotoDocsLink.href = docUrl;
 
   const commits = node.metadata.recent_commits ?? [];
   historyBtn.hidden = commits.length === 0;
@@ -171,14 +157,6 @@ function main(): void {
     });
   });
   setActiveDirectionButton(renderer.getDirection());
-
-  const docsNav = document.getElementById("ariadne-docs-nav");
-  docsNav?.addEventListener("click", (event) => {
-    const item = (event.target as HTMLElement).closest<HTMLButtonElement>(".ariadne-docs-nav-item");
-    if (item?.dataset.docSlug) showDocPage(item.dataset.docSlug);
-  });
-  const firstDocsNavItem = document.querySelector<HTMLButtonElement>(".ariadne-docs-nav-item");
-  if (firstDocsNavItem?.dataset.docSlug) showDocPage(firstDocsNavItem.dataset.docSlug);
 
   rerender();
 }

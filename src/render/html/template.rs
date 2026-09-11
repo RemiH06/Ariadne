@@ -1,5 +1,4 @@
 use crate::config::ColorsConfig;
-use crate::render::docs::DocPage;
 
 pub struct TemplateInput<'a> {
     pub title: &'a str,
@@ -13,7 +12,6 @@ pub struct TemplateInput<'a> {
     pub graph_json: &'a str,
     pub config_json: &'a str,
     pub client_js: &'a str,
-    pub doc_pages: &'a [DocPage],
 }
 
 pub fn render(input: TemplateInput) -> String {
@@ -27,7 +25,6 @@ pub fn render(input: TemplateInput) -> String {
     let graph_json = script_safe_json(input.graph_json);
     let config_json = script_safe_json(input.config_json);
     let client_js = input.client_js;
-    let docs_section = docs_section_html(input.doc_pages);
 
     // El ícono es una única flecha (apunta a la derecha) rotada por botón —
     // así las 8 orientaciones comparten un solo símbolo SVG y se ven
@@ -237,12 +234,14 @@ pub fn render(input: TemplateInput) -> String {
     gap: 8px;
   }}
   .ariadne-btn {{
+    display: inline-block;
     background: transparent;
     color: var(--ariadne-text);
     border: 1px solid var(--ariadne-link);
     border-radius: 6px;
     padding: 4px 9px;
     font: inherit;
+    text-decoration: none;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }}
@@ -330,72 +329,6 @@ pub fn render(input: TemplateInput) -> String {
   .ariadne-node-doc-star {{
     color: {accent};
     pointer-events: none;
-  }}
-  #ariadne-docs {{
-    max-width: 900px;
-    margin: 48px auto;
-    padding: 0 24px 64px;
-  }}
-  .ariadne-docs-title {{
-    display: block;
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 18px;
-  }}
-  .ariadne-docs-body {{
-    display: grid;
-    grid-template-columns: 200px 1fr;
-    gap: 28px;
-    align-items: start;
-  }}
-  #ariadne-docs-nav {{
-    position: sticky;
-    top: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }}
-  .ariadne-docs-nav-item {{
-    text-align: left;
-    background: transparent;
-    color: var(--ariadne-text);
-    opacity: 0.65;
-    border: none;
-    border-left: 2px solid transparent;
-    border-radius: 0;
-    padding: 5px 10px;
-    font: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    transition: opacity 0.15s ease, border-color 0.15s ease;
-  }}
-  .ariadne-docs-nav-item:hover {{
-    opacity: 1;
-  }}
-  .ariadne-docs-nav-item.active {{
-    opacity: 1;
-    border-left-color: var(--ariadne-accent);
-    font-weight: 600;
-  }}
-  #ariadne-docs-content {{
-    min-width: 0;
-    line-height: 1.65;
-  }}
-  .ariadne-doc-page :first-child {{
-    margin-top: 0;
-  }}
-  .ariadne-doc-page pre {{
-    background: color-mix(in srgb, var(--ariadne-bg) 60%, var(--ariadne-text) 6%);
-    padding: 12px 14px;
-    border-radius: 8px;
-    overflow-x: auto;
-  }}
-  .ariadne-doc-page code {{
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 0.92em;
-  }}
-  .ariadne-doc-page a {{
-    color: var(--ariadne-accent);
   }}
 </style>
 </head>
@@ -491,13 +424,12 @@ pub fn render(input: TemplateInput) -> String {
   <button id="ariadne-selection-toggle" title="Mostrar/ocultar nodo seleccionado">▸</button>
   <div id="ariadne-selection-panel">
     <span class="ariadne-section-title">Nodo seleccionado</span>
-    <div id="ariadne-selection-label" class="ariadne-selection-label">Hacé click en un nodo para ver su información.</div>
-    <button id="ariadne-goto-docs-btn" class="ariadne-btn" hidden>Ir a documentación</button>
+    <div id="ariadne-selection-label" class="ariadne-selection-label">Haz clic en un nodo para ver su información.</div>
+    <a id="ariadne-goto-docs-btn" class="ariadne-btn" href="#" target="_blank" rel="noopener" hidden>Ir a documentación</a>
     <button id="ariadne-history-btn" class="ariadne-btn" hidden>Ver historial</button>
     <div id="ariadne-history-list" class="ariadne-history-list" hidden></div>
   </div>
 </div>
-{docs_section}
 <script type="application/json" id="ariadne-graph-data">{graph_json}</script>
 <script type="application/json" id="ariadne-render-config">{config_json}</script>
 <script>{client_js}</script>
@@ -565,38 +497,6 @@ fn legend_html(colors: &ColorsConfig) -> String {
         class = colors.class,
         method = colors.method,
         attribute = colors.attribute,
-    )
-}
-
-/// Sección de documentación (nav + contenido), agregada como hermana de
-/// `#ariadne-app` al final del `<body>` — el body no tiene
-/// `overflow:hidden`, así que esto simplemente alarga la página y la hace
-/// scrollable sin tocar el layout a pantalla completa del diagrama. Vacía
-/// (string vacío) si no hay páginas configuradas, para no dejar un
-/// contenedor fantasma sin nada adentro.
-fn docs_section_html(doc_pages: &[DocPage]) -> String {
-    if doc_pages.is_empty() {
-        return String::new();
-    }
-
-    let nav_items: String = doc_pages
-        .iter()
-        .map(|p| format!(r#"<button class="ariadne-docs-nav-item" data-doc-slug="{}">{}</button>"#, p.slug, escape_html(&p.title)))
-        .collect();
-
-    let articles: String = doc_pages
-        .iter()
-        .map(|p| format!(r#"<article id="ariadne-doc-{}" class="ariadne-doc-page" hidden>{}</article>"#, p.slug, p.html))
-        .collect();
-
-    format!(
-        r##"<div id="ariadne-docs">
-  <span class="ariadne-docs-title">Documentación</span>
-  <div class="ariadne-docs-body">
-    <nav id="ariadne-docs-nav">{nav_items}</nav>
-    <div id="ariadne-docs-content">{articles}</div>
-  </div>
-</div>"##
     )
 }
 

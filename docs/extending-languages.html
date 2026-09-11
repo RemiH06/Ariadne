@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agregar un lenguaje · Ariadne</title>
+<meta name="description" content="El patrón compartido entre extractores de Ariadne, y cómo sumar un lenguaje nuevo.">
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
+    --line: #45475a; --accent: #89b4fa;
+    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+
+  nav.top { border-bottom: 1px solid var(--line); padding: 20px 0; }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  nav.top a.home svg { width: 26px; height: 26px; }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.top a.home svg { transition: transform 0.3s ease; }
+    nav.top a.home:hover svg { transform: rotate(-10deg); }
+  }
+  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
+  nav.top .crumbs a { color: var(--text-dim); }
+  nav.top .crumbs a.active { color: var(--accent); }
+
+  article { padding: 56px 0 40px; }
+  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
+  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
+  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
+  article p { color: var(--text-dim); margin: 0 0 16px; }
+  article ul, article ol { color: var(--text-dim); }
+  article li { margin-bottom: 8px; }
+  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  article pre { font-family: var(--mono); font-size: 14px; line-height: 1.7; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; overflow-x: auto; }
+  article pre code { background: none; padding: 0; }
+  article strong { color: var(--text); }
+
+  .reveal { opacity: 0; transform: translateY(14px); }
+  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
+  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+
+  footer.pagefoot { border-top: 1px solid var(--line); padding: 28px 0 56px; }
+  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
+  footer.pagefoot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="home" href="index.html">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#2a2a3d"/><path d="M28,72 L72,28" stroke="#89b4fa" stroke-width="9" stroke-linecap="round"/><circle cx="72" cy="28" r="9" fill="#89b4fa"/></svg>
+      Ariadne
+    </a>
+    <div class="crumbs">
+      <a href="architecture.html">01 Arquitectura</a>
+      <a class="active" href="extending-languages.html">02 Lenguajes</a>
+      <a href="git-integration.html">03 Git</a>
+      <a href="docs-linking.html">04 Docs</a>
+    </div>
+  </div>
+</nav>
+
+<article class="wrap">
+  <h1 class="reveal">Agregar un lenguaje nuevo</h1>
+  <p class="kicker reveal">El patrón compartido entre extractores</p>
+
+  <p class="reveal">Ariadne soporta hoy 15 lenguajes para dos cosas distintas, referencias entre archivos (<code>src/extractor/imports.rs</code>) y clases, métodos y atributos (<code>src/extractor/classes.rs</code>), con el mismo patrón en ambos módulos:</p>
+  <ol class="reveal">
+    <li>Un dispatcher público (<code>extract_imports</code>/<code>extract_classes</code>) que hace <code>match language { "python" =&gt; ..., "rust" =&gt; ..., ... }</code>.</li>
+    <li>Una función de extracción por lenguaje.</li>
+    <li>Scanners de bajo nivel <strong>compartidos entre lenguajes</strong> para no repetir la parte difícil (encontrar dónde termina un bloque) en cada uno.</li>
+  </ol>
+
+  <h2 class="reveal">Los dos estilos de "dónde termina un bloque"</h2>
+  <ul class="reveal">
+    <li><strong>Por indentación</strong> (Python, Ruby, Elixir, Julia, Haskell): el cuerpo son las líneas siguientes con más indentación que la línea de cabecera, hasta la primera línea con indentación igual o menor. Función: <code>indented_body_end</code>.</li>
+    <li><strong>Por llaves</strong> (JS/TS, Rust, Go, Java, Kotlin, PHP, C/C++): balancea <code>{ }</code> ingenuamente. Función: <code>braced_body_end</code>. Necesita las líneas ya enmascaradas, porque un solo string o comentario con una llave suelta desincroniza el conteo para el resto del archivo.</li>
+  </ul>
+
+  <h2 class="reveal"><code>mask_source</code>/<code>mask_line</code>: por qué existe</h2>
+  <p class="reveal">Un contador ingenuo de <code>{ }</code> o <code>( )</code> se rompe apenas hay un string, un comentario, o (en JS/TS) un literal de regex con esos caracteres adentro. <code>mask_source</code> reemplaza todo eso por espacios antes de contar, línea por línea pero con estado de bloque de comentario cruzando líneas. Esto se descubrió de la forma difícil: un comentario de varias líneas en <code>client/src/render.ts</code> desincronizaba el conteo de una clase a partir de cierto punto del archivo, y por separado un literal de regex también desbalanceaba paréntesis sin ser un comentario. Las dos causas ya están cubiertas, pero es la clase de bug que este enmascarado previene en general.</p>
+
+  <h2 class="reveal">Cómo agregar un lenguaje</h2>
+  <ol class="reveal">
+    <li><strong>Imports</strong> (<code>imports.rs</code>): un brazo al <code>match</code> de <code>extract_imports</code> con una función heurística de línea. Si el lenguaje tiene imports relativos a archivo, también un brazo en <code>resolve_relative_import</code>. Si tiene convención de paquete propio, una función <code>resolve_&lt;lang&gt;_absolute</code> nueva.</li>
+    <li><strong>Clases</strong> (<code>classes.rs</code>): un brazo a <code>extract_classes</code>, con una función que reusa <code>indented_body_end</code> o <code>braced_body_end</code> más <code>top_level_lines</code> según el estilo del lenguaje.</li>
+    <li><strong>Tests</strong>: cada lenguaje tiene entre 1 y 3 tests unitarios en el mismo archivo. Cubre al menos nombre de clase, un método, un atributo, y algún caso borde específico del lenguaje si lo hay.</li>
+  </ol>
+
+  <h2 class="reveal">Salvedades honestas ya conocidas</h2>
+  <ul class="reveal">
+    <li><strong>Julia</strong>: no tiene métodos por diseño, porque usa multiple dispatch y no existe el concepto de "método de una clase".</li>
+    <li><strong>R</strong>: el más frágil, porque conviven dos sistemas de OOP distintos (S4 y R6) con parseo de <code>list()</code> anidado a mano.</li>
+    <li><strong>Workspaces y monorepos</strong> (Rust/Go/PHP): la resolución busca el manifiesto ancestro más cercano al archivo, descubierto escaneando el árbol. No lee <code>[workspace].members</code> de <code>Cargo.toml</code> ni nada equivalente.</li>
+  </ul>
+</article>
+
+<footer class="pagefoot">
+  <div class="wrap">
+    <a href="architecture.html">← Arquitectura</a>
+    <a href="git-integration.html">Siguiente: Integración con git →</a>
+  </div>
+</footer>
+
+<script type="module">
+  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
+  document.body.classList.add("js-ready");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = document.querySelectorAll(".reveal");
+  if (reduced) {
+    items.forEach((el) => el.classList.add("in"));
+  } else {
+    items.forEach((el, i) => {
+      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
+    });
+    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
+  }
+</script>
+</body>
+</html>

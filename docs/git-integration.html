@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Integración con git · Ariadne</title>
+<meta name="description" content="Por qué Ariadne usa git log por CLI en vez de git2, y por qué el historial de commits se precalcula en vez de pedirse en vivo.">
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
+    --line: #45475a; --accent: #89b4fa;
+    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+
+  nav.top { border-bottom: 1px solid var(--line); padding: 20px 0; }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  nav.top a.home svg { width: 26px; height: 26px; }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.top a.home svg { transition: transform 0.3s ease; }
+    nav.top a.home:hover svg { transform: rotate(-10deg); }
+  }
+  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
+  nav.top .crumbs a { color: var(--text-dim); }
+  nav.top .crumbs a.active { color: var(--accent); }
+
+  article { padding: 56px 0 40px; }
+  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
+  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
+  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
+  article p { color: var(--text-dim); margin: 0 0 16px; }
+  article ul { color: var(--text-dim); }
+  article li { margin-bottom: 8px; }
+  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  article strong { color: var(--text); }
+
+  .reveal { opacity: 0; transform: translateY(14px); }
+  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
+  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+
+  footer.pagefoot { border-top: 1px solid var(--line); padding: 28px 0 56px; }
+  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
+  footer.pagefoot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="home" href="index.html">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#2a2a3d"/><path d="M28,72 L72,28" stroke="#89b4fa" stroke-width="9" stroke-linecap="round"/><circle cx="72" cy="28" r="9" fill="#89b4fa"/></svg>
+      Ariadne
+    </a>
+    <div class="crumbs">
+      <a href="architecture.html">01 Arquitectura</a>
+      <a href="extending-languages.html">02 Lenguajes</a>
+      <a class="active" href="git-integration.html">03 Git</a>
+      <a href="docs-linking.html">04 Docs</a>
+    </div>
+  </div>
+</nav>
+
+<article class="wrap">
+  <h1 class="reveal">Integración con git</h1>
+  <p class="kicker reveal">Autor, fecha, y por qué se precalcula todo</p>
+
+  <p class="reveal">Ariadne muestra tres cosas basadas en el historial de git, todas construidas sobre el mismo dato base: autor y fecha del último commit por archivo, y un historial corto (últimos 5 commits) para "ver historial".</p>
+
+  <h2 class="reveal">Por qué usa <code>git log</code> por línea de comandos en vez de <code>git2</code></h2>
+  <p class="reveal"><code>src/extractor/git_blame.rs</code> corre el binario <code>git</code> como subproceso en vez de usar la crate <code>git2</code> (bindings de libgit2). La razón es pragmática: Ariadne ya asume que el proyecto que analiza tiene <code>git</code> instalado y en PATH, así que correrlo como subproceso significa cero dependencias nuevas, cero tiempo de compilación de una librería en C, y funciona igual en cualquier plataforma donde <code>git</code> ya esté disponible. Es consistente con el resto del extractor: heurística simple y con límites conocidos, no necesariamente la solución más elegante posible.</p>
+
+  <h2 class="reveal">Un solo <code>git log</code>, no uno por archivo</h2>
+  <p class="reveal"><code>collect_commit_history_by_path</code> corre <strong>un</strong> <code>git log --name-only</code> sobre todo el historial del repo y arma un mapa de ruta a los últimos N commits, caminando de más nuevo a más viejo y registrando cada ruta hasta completar N entradas. La alternativa obvia, un <code>git log -- &lt;archivo&gt;</code> por cada archivo del proyecto, escala mal: cientos de archivos significarían cientos de procesos de git.</p>
+
+  <h2 class="reveal">Por qué el HTML no puede pedir nada en vivo</h2>
+  <p class="reveal">El HTML generado es un archivo autocontenido sin servidor. Cuando alguien lo abre, no hay ningún proceso de Ariadne corriendo para responder "dame el historial de este archivo". Por eso "ver historial" muestra como máximo 5 commits <strong>precalculados al generar</strong>, en vez de un <code>git log</code> bajo demanda.</p>
+
+  <h2 class="reveal">Colorear por antigüedad: por qué tono en HSL, no un canal aparte</h2>
+  <p class="reveal">La primera versión usaba opacidad para codificar antigüedad, pero competía visualmente con la opacidad que ya usa el "focus" de un nodo: dos significados distintos peleando por el mismo canal. La versión actual ajusta la <strong>luminosidad</strong> del color de categoría que el nodo ya tiene (más claro es más viejo), calculado en HSL a partir del hex existente. Así generaliza a cualquier paleta configurada sin hardcodear una rampa de colores por tema.</p>
+
+  <h2 class="reveal">Limitaciones conocidas</h2>
+  <ul class="reveal">
+    <li>No sigue renombres de archivo, así que un archivo renombrado pierde su historial previo en el mapa.</li>
+    <li>No hay blame línea por línea real. Para eso, es mejor abrir el archivo directamente.</li>
+    <li>Si la carpeta analizada no es un repo git, o no hay <code>git</code> en PATH, todo esto queda simplemente vacío sin fallar el resto de la generación.</li>
+  </ul>
+</article>
+
+<footer class="pagefoot">
+  <div class="wrap">
+    <a href="extending-languages.html">← Agregar un lenguaje</a>
+    <a href="docs-linking.html">Siguiente: Vincular documentación →</a>
+  </div>
+</footer>
+
+<script type="module">
+  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
+  document.body.classList.add("js-ready");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = document.querySelectorAll(".reveal");
+  if (reduced) {
+    items.forEach((el) => el.classList.add("in"));
+  } else {
+    items.forEach((el, i) => {
+      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
+    });
+    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
+  }
+</script>
+</body>
+</html>

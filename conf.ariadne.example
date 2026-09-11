@@ -22,7 +22,7 @@ text_color = "#cdd6f4"
 # Colores por NodeType (default/directory/file/...) y por categoría de
 # archivo (test/config/docs/styles/markup/script). La categoría manda sobre
 # el tipo cuando aplica: un .py de test se pinta con `test`, no con `file`.
-# El ícono de cada archivo ya dice el lenguaje — el color está para decir
+# El ícono de cada archivo ya dice el lenguaje, el color está para decir
 # algo que el ícono no dice (¿es un test? ¿config?).
 [output.html.colors]
 default   = "#89b4fa"
@@ -63,10 +63,11 @@ detect = "auto"
 
 # Páginas de documentación conectadas a nodos del grafo: mapeo explícito,
 # nada de auto-descubrimiento por convención. `node` debe matchear el id
-# (ruta relativa) de un nodo del diagrama; `file` es un Markdown, relativo
-# a la raíz del proyecto. El nodo se marca con una estrella en el diagrama
-# y gana un botón "Ir a documentación" al seleccionarlo — las páginas se
-# ven como un menú navegable aparte, debajo del diagrama en el mismo HTML.
+# (ruta relativa) de un nodo del diagrama; `url` es donde vive esa página,
+# relativa o absoluta. El nodo se marca con una estrella en el diagrama y
+# gana un link "Ir a documentación" al seleccionarlo. Ariadne no renderiza
+# ni convierte nada de esa página, solo valida que el nodo exista y pasa
+# la URL tal cual.
 # [[docs.pages]]
 # node = "src/auth.py"
-# file = "docs/auth.md"
+# url = "https://miproyecto.github.io/docs/auth.html"

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vincular documentación · Ariadne</title>
+<meta name="description" content="Cómo [[docs.pages]] conecta nodos del grafo a páginas de documentación propias con un simple link.">
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
+    --line: #45475a; --accent: #89b4fa;
+    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+
+  nav.top { border-bottom: 1px solid var(--line); padding: 20px 0; }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  nav.top a.home svg { width: 26px; height: 26px; }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.top a.home svg { transition: transform 0.3s ease; }
+    nav.top a.home:hover svg { transform: rotate(-10deg); }
+  }
+  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
+  nav.top .crumbs a { color: var(--text-dim); }
+  nav.top .crumbs a.active { color: var(--accent); }
+
+  article { padding: 56px 0 40px; }
+  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
+  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
+  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
+  article p { color: var(--text-dim); margin: 0 0 16px; }
+  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  article pre { font-family: var(--mono); font-size: 14px; line-height: 1.7; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; overflow-x: auto; }
+  article pre code { background: none; padding: 0; }
+  article strong { color: var(--text); }
+  article ol { color: var(--text-dim); }
+  article li { margin-bottom: 8px; }
+
+  .callout {
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    padding: 16px 20px;
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  .reveal { opacity: 0; transform: translateY(14px); }
+  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
+  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+
+  footer.pagefoot { border-top: 1px solid var(--line); padding: 28px 0 56px; }
+  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
+  footer.pagefoot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="home" href="index.html">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#2a2a3d"/><path d="M28,72 L72,28" stroke="#89b4fa" stroke-width="9" stroke-linecap="round"/><circle cx="72" cy="28" r="9" fill="#89b4fa"/></svg>
+      Ariadne
+    </a>
+    <div class="crumbs">
+      <a href="architecture.html">01 Arquitectura</a>
+      <a href="extending-languages.html">02 Lenguajes</a>
+      <a href="git-integration.html">03 Git</a>
+      <a class="active" href="docs-linking.html">04 Docs</a>
+    </div>
+  </div>
+</nav>
+
+<article class="wrap">
+  <h1 class="reveal">Vincular documentación</h1>
+  <p class="kicker reveal">Cómo funciona [[docs.pages]]</p>
+
+  <p class="reveal callout">Estás leyendo la prueba viviente de esta funcionalidad: esta página existe porque <code>conf.ariadne</code>, en la raíz del repo, tiene una entrada <code>[[docs.pages]]</code> que conecta el nodo <code>src/render/docs/pages.rs</code> (justo el archivo que la hace posible) con esta URL. Si llegaste aquí desde el panel "Nodo seleccionado" del diagrama, ya viste la funcionalidad de punta a punta.</p>
+
+  <h2 class="reveal">Por qué es un link y no contenido embebido</h2>
+  <p class="reveal">La primera versión de esta funcionalidad convertía Markdown a HTML y lo embebía dentro del propio diagrama, en una sección "Documentación" aparte. Se simplificó a propósito. El diagrama sirve para navegar la documentación, no para mostrarla, y una página de documentación real (con sus propias animaciones, su propio diseño, su propio lugar en un sitio) funciona mejor viviendo aparte que encajada dentro del HTML de otra cosa. Ariadne ya no lee ni convierte nada: solo valida que el nodo exista y le pasa la URL al cliente.</p>
+
+  <h2 class="reveal">Por qué es un mapeo explícito y no un auto-descubrimiento</h2>
+  <p class="reveal">La alternativa obvia sería una convención del tipo "si existe <code>docs/&lt;mismo-nombre&gt;.html</code>, conéctalo solo", pero eso falla en cuanto un proyecto real no sigue esa convención. La mayoría no la sigue: la documentación vive en cualquier estructura, con cualquier nombre, a veces ni siquiera cerca del código que documenta, y a veces ni siquiera en el mismo repositorio (puede estar en el GitHub Pages de otro proyecto). Un mapeo explícito en <code>conf.ariadne</code> es más largo de escribir, pero <strong>nunca falla en silencio</strong>: o el nodo existe, o <code>ariadne generate</code> falla con un error claro que señala cuál entrada está mal.</p>
+
+  <h2 class="reveal">Cómo se arma</h2>
+  <pre class="reveal"><code>[[docs.pages]]
+node = "src/render/docs/pages.rs"   # debe coincidir con el id de un nodo del grafo
+url  = "docs-linking.html"          # relativa, o una URL absoluta</code></pre>
+
+  <p class="reveal">Al generar (<code>src/cli/generate.rs</code>) pasan tres cosas:</p>
+  <ol class="reveal">
+    <li><code>build_doc_pages</code> (<code>src/render/docs/pages.rs</code>) resuelve cada entrada contra el grafo ya construido. Solo valida que el <code>node</code> exista, nada más.</li>
+    <li>El nodo correspondiente gana <code>metadata.doc_url</code>, que el cliente usa para dibujar la estrella y como <code>href</code> del link "Ir a documentación".</li>
+    <li>Nada se renderiza ni se embebe. El link simplemente lleva a donde pusiste el contenido, como cualquier link normal.</li>
+  </ol>
+
+  <h2 class="reveal">Por qué solo archivos y no carpetas</h2>
+  <p class="reveal">Una carpeta podría en teoría tener una página de resumen del módulo, pero documentar una carpeta y documentar todo lo que se tocó dentro de ella son cosas distintas, y mezclarlas hubiera complicado el diseño sin un caso de uso concreto que lo pidiera. El <code>node</code> de <code>[[docs.pages]]</code> podría apuntar a un id de carpeta sin cambios grandes si esa necesidad aparece, pero no se construyó de forma especulativa.</p>
+</article>
+
+<footer class="pagefoot">
+  <div class="wrap">
+    <a href="git-integration.html">← Integración con git</a>
+    <a href="index.html">Volver al inicio →</a>
+  </div>
+</footer>
+
+<script type="module">
+  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
+  document.body.classList.add("js-ready");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = document.querySelectorAll(".reveal");
+  if (reduced) {
+    items.forEach((el) => el.classList.add("in"));
+  } else {
+    items.forEach((el, i) => {
+      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
+    });
+    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
+  }
+</script>
+</body>
+</html>

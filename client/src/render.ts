@@ -494,7 +494,7 @@ export class DiagramRenderer {
       // Estrella: el nodo tiene una página de documentación asociada
       // ([[docs.pages]] de conf.ariadne) — badge en la esquina superior
       // derecha, aparte del ícono de lenguaje (que ya ocupa la izquierda).
-      if (node.metadata.doc_slug) {
+      if (node.metadata.doc_url) {
         const badgeCenter = isRowShape(kind)
           ? { x: geom.width / 2 - STAR_BADGE_SIZE / 2 - STAR_BADGE_INSET, y: -geom.height / 2 + geom.tabHeight / 2 + STAR_BADGE_SIZE / 2 + STAR_BADGE_INSET }
           : { x: geom.radius * 0.72, y: -geom.radius * 0.72 };

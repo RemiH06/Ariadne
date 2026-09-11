@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arquitectura · Ariadne</title>
+<meta name="description" content="El pipeline de Ariadne y por qué usa heurística de texto en vez de un parser AST real.">
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
+    --line: #45475a; --accent: #89b4fa;
+    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
+  a { color: var(--accent); }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+
+  nav.top {
+    border-bottom: 1px solid var(--line);
+    padding: 20px 0;
+  }
+  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  nav.top a.home svg { width: 26px; height: 26px; }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.top a.home svg { transition: transform 0.3s ease; }
+    nav.top a.home:hover svg { transform: rotate(-10deg); }
+  }
+  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
+  nav.top .crumbs a { color: var(--text-dim); }
+  nav.top .crumbs a.active { color: var(--accent); }
+
+  article { padding: 56px 0 40px; }
+  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
+  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
+  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
+  article p { color: var(--text-dim); margin: 0 0 16px; }
+  article ul { color: var(--text-dim); }
+  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  article pre { font-family: var(--mono); font-size: 14px; line-height: 1.7; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; overflow-x: auto; }
+  article pre code { background: none; padding: 0; }
+  article strong { color: var(--text); }
+
+  .reveal { opacity: 0; transform: translateY(14px); }
+  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
+  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+
+  footer.pagefoot {
+    border-top: 1px solid var(--line);
+    padding: 28px 0 56px;
+  }
+  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
+  footer.pagefoot a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="home" href="index.html">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#2a2a3d"/><path d="M28,72 L72,28" stroke="#89b4fa" stroke-width="9" stroke-linecap="round"/><circle cx="72" cy="28" r="9" fill="#89b4fa"/></svg>
+      Ariadne
+    </a>
+    <div class="crumbs">
+      <a class="active" href="architecture.html">01 Arquitectura</a>
+      <a href="extending-languages.html">02 Lenguajes</a>
+      <a href="git-integration.html">03 Git</a>
+      <a href="docs-linking.html">04 Docs</a>
+    </div>
+  </div>
+</nav>
+
+<article class="wrap">
+  <h1 class="reveal">Arquitectura</h1>
+  <p class="kicker reveal">Cómo está armado el pipeline, y por qué</p>
+
+  <p class="reveal">Ariadne tiene un pipeline lineal, sin estado compartido raro: cada fase lee lo que necesita y produce datos inmutables para la siguiente.</p>
+
+  <pre class="reveal"><code>walk (respeta .gitignore)
+  → classify (extensión, lenguaje, ícono, ¿es generado?, categoría, forma)
+  → extract imports / extract classes / collect git history
+  → build_graph (arma nodos + aristas Contains/DependsOn, resuelve referencias)
+  → render (html interactivo, o markdown → Pandoc → pdf/rtf/xml/latex)</code></pre>
+
+  <p class="reveal"><code>src/extractor/build_graph.rs</code> es el corazón: el único lugar donde todas las fases anteriores se juntan en un <code>Graph</code> (<code>src/schema/mod.rs</code>), una lista plana de <code>GraphNode</code>/<code>GraphEdge</code>, no un árbol. El árbol que ves en el diagrama lo reconstruye el cliente (<code>client/src/data.ts::buildFilteredTree</code>) a partir de <code>parent_id</code>, aplicando filtros y colapsos. Esa decisión, mandar un grafo plano y dejar que el cliente arme la vista, es la razón por la que agregar clases, métodos, atributos, o una estrella de documentación, nunca tocó una sola línea de renderizado del árbol: todo lo que necesita <code>parent_id</code>, <code>depth</code> y un <code>node_type</code> reconocido ya se renderiza solo.</p>
+
+  <h2 class="reveal">Por qué usa heurística de texto en vez de un parser AST real</h2>
+  <p class="reveal">Cada extractor (<code>imports.rs</code>, <code>classes.rs</code>) reconoce patrones de texto por línea o por bloque, sin un parser real de ningún lenguaje. Es una decisión de diseño, no una limitación temporal: soportar 15 lenguajes con parsers AST reales significaría mantener 15 gramáticas y dependencias distintas, cada una con su propio ciclo de breaking changes. La heurística de texto es barata de escribir, barata de extender, y falla de forma predecible: macros, metaprogramación, o formato muy poco convencional pueden romperla, y eso se documenta explícitamente en cada función en vez de prometer una precisión que no existe.</p>
+
+  <h2 class="reveal">Por qué un grafo plano en JSON en vez de un árbol anidado</h2>
+  <p class="reveal">El JSON embebido (<code>&lt;script type="application/json" id="ariadne-graph-data"&gt;</code> en el HTML generado) es intencionalmente la forma más simple posible: <code>nodes</code>/<code>edges</code> planos, sin anidar. Hay dos razones:</p>
+  <ul class="reveal">
+    <li><strong>El cliente necesita reconstruir vistas distintas</strong> del mismo grafo (colapsado, filtrado por extensión, sin generados, etc.). Tener un árbol ya armado de un lado específico obligaría a reconstruirlo de todos modos cada vez que cambia un filtro.</li>
+    <li><strong>Un agente de IA que lea este JSON directamente</strong>, en vez de mirar el dibujo, puede recorrer <code>nodes</code>/<code>edges</code> con cualquier herramienta común sin entender la lógica de árbol del cliente.</li>
+  </ul>
+
+  <h2 class="reveal">El HTML de salida es un solo archivo autocontenido</h2>
+  <p class="reveal">El bundle de JS (D3 compilado por esbuild), los datos del grafo, el sprite de íconos SVG y el favicon (como data URI) van todos embebidos en el mismo <code>.html</code>. Cero requests externos, funciona abierto con <code>file://</code> o subido tal cual a GitHub Pages. Por eso "ver historial" muestra como máximo 5 commits precalculados al generar, en vez de pedirle nada a git en vivo: no hay ningún servidor corriendo cuando alguien abre el HTML.</p>
+</article>
+
+<footer class="pagefoot">
+  <div class="wrap">
+    <a href="index.html">← Volver al inicio</a>
+    <a href="extending-languages.html">Siguiente: Agregar un lenguaje →</a>
+  </div>
+</footer>
+
+<script type="module">
+  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
+  document.body.classList.add("js-ready");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = document.querySelectorAll(".reveal");
+  if (reduced) {
+    items.forEach((el) => el.classList.add("in"));
+  } else {
+    items.forEach((el, i) => {
+      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
+    });
+    // Red de seguridad: si por lo que sea inView nunca dispara para algún
+    // elemento (impresión, un scroll poco convencional), el contenido no
+    // debe quedar invisible para siempre.
+    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
+  }
+</script>
+</body>
+</html>

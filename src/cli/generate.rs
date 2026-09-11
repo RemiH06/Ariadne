@@ -83,12 +83,14 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
     // Páginas de documentación (mapeo explícito de conf.ariadne, ver
     // [[docs.pages]]) — build_graph no sabe nada de esto, es responsabilidad
-    // del orquestador. Falla fuerte si una entrada está mal (nodo
-    // inexistente o archivo no encontrado), antes de escribir nada.
-    let doc_pages = build_doc_pages(&graph, &root, &cfg.docs.pages)?;
+    // del orquestador. Falla fuerte si una entrada referencia un nodo
+    // inexistente, antes de escribir nada. Ariadne no renderiza esas
+    // páginas, solo taggea el nodo con la URL para que el cliente ofrezca
+    // un link directo ("ir a documentación").
+    let doc_pages = build_doc_pages(&graph, &cfg.docs.pages)?;
     for page in &doc_pages {
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == page.node_id) {
-            node.metadata.doc_slug = Some(page.slug.clone());
+            node.metadata.doc_url = Some(page.url.clone());
         }
     }
 
@@ -99,7 +101,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
     let slug = slugify(&title);
 
     if cfg.output.formats.iter().any(|f| f == "html") {
-        let html = render_html(&graph, &title, &cfg.output.html, &cfg.filters, &doc_pages)?;
+        let html = render_html(&graph, &title, &cfg.output.html, &cfg.filters)?;
         let out_path = out_dir.join(format!("{slug}.html"));
         std::fs::write(&out_path, html)
             .with_context(|| format!("no se pudo escribir {}", out_path.display()))?;

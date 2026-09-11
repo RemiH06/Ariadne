@@ -1,0 +1,54 @@
+# Configuración de Ariadne para documentarse a sí misma.
+# `ariadne generate .` sin flags usa este archivo.
+
+[project]
+name = "Ariadne"
+path = "."
+description = "Diagrama y documentación de Ariadne, generados por Ariadne."
+
+[output]
+formats = ["html"]
+# El diagrama se genera dentro de docs/ (no output/, que está gitignored)
+# para quedar versionado junto al resto del sitio de GitHub Pages.
+dir = "./docs"
+
+[output.html]
+theme = "dark"
+background = "#1e1e2e"
+link_color = "#585b70"
+text_color = "#cdd6f4"
+
+[output.html.icons]
+enabled = true
+set = "devicon"
+
+[filters]
+max_depth = 5
+hide_generated = true
+hide_extensions = [".lock"]
+hide_paths = ["**/node_modules/**", "**/.git/**", "**/target/**", "**/output/**"]
+
+[ignore]
+extra = ["target/", "output/", "node_modules/"]
+
+[languages]
+detect = "auto"
+
+# Ariadne documentándose a sí misma: cada nodo redirige a su propia página
+# animada en docs/ (ver docs/docs-linking.html). Ariadne no renderiza nada
+# de esas páginas, solo marca el nodo con una estrella y ofrece el link.
+[[docs.pages]]
+node = "src/extractor/build_graph.rs"
+url = "architecture.html"
+
+[[docs.pages]]
+node = "src/extractor/classes.rs"
+url = "extending-languages.html"
+
+[[docs.pages]]
+node = "src/extractor/git_blame.rs"
+url = "git-integration.html"
+
+[[docs.pages]]
+node = "src/render/docs/pages.rs"
+url = "docs-linking.html"
