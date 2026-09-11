@@ -167,6 +167,31 @@ pub fn render(input: TemplateInput) -> String {
     transform: translateX(8px);
     pointer-events: none;
   }}
+  /* Con suficiente ancho, los paneles dejan de flotar encima del grafo y
+  pasan a vivir en los márgenes laterales: #ariadne-app gana padding y el
+  SVG (que ya es width:100%) se achica de verdad en vez de solo taparse
+  visualmente. Los botones de mostrar/ocultar ya no hacen falta porque
+  nada tapa nada. */
+  @media (min-width: 1300px) {{
+    #ariadne-app {{
+      padding-left: 300px;
+      padding-right: 300px;
+      box-sizing: border-box;
+    }}
+    #ariadne-controls-toggle,
+    #ariadne-selection-toggle {{
+      display: none;
+    }}
+    #ariadne-controls {{
+      width: 260px;
+    }}
+    #ariadne-controls.ariadne-collapsed,
+    #ariadne-selection-panel.ariadne-collapsed {{
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }}
+  }}
   .ariadne-legend {{
     display: flex;
     gap: 18px;

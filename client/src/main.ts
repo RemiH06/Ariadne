@@ -158,6 +158,18 @@ function main(): void {
   });
   setActiveDirectionButton(renderer.getDirection());
 
+  // El área real del SVG cambia al cruzar el breakpoint de paneles laterales
+  // (ver el @media en template.rs) y, en general, en cualquier resize de la
+  // ventana. fitToViewport solo se calcula en momentos puntuales (carga,
+  // cambio de orientación), así que sin esto el grafo queda descentrado
+  // respecto al nuevo espacio disponible. Debounced para no recalcular en
+  // cada pixel mientras se arrastra el borde de la ventana.
+  let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => renderer.fit(), 150);
+  });
+
   rerender();
 }
 

@@ -217,6 +217,18 @@
 
   .diagram-section .star { color: var(--accent-2); }
 
+  /* Más ancho que el .wrap de lectura (1080px): el diagrama es una
+  herramienta interactiva, no texto, y en monitores anchos necesita ese
+  espacio extra para que sus propios paneles laterales quepan sin que el
+  iframe se quede angosto (ver el @media de template.rs, activa recién
+  desde 1300px de ancho real de iframe). El título y el párrafo de arriba
+  se quedan en el wrap normal para no estirar las líneas de texto. */
+  .wrap-wide {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
   .diagram-frame-wrap {
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -377,6 +389,8 @@
   <div class="wrap">
     <h2 class="reveal">Navega la documentación desde aquí</h2>
     <p class="reveal">Este es el propio diagrama de Ariadne, generado por Ariadne, y es interactivo de verdad: colapsa carpetas, cambia de orientación, activa filtros. Los nodos marcados con <span class="star">★</span> tienen una página propia. Selecciona uno y usa "Ir a documentación" en el panel derecho para saltar directo al contenido, o sigue leyendo las 4 páginas de abajo en orden.</p>
+  </div>
+  <div class="wrap-wide">
     <div class="diagram-frame-wrap reveal">
       <iframe src="ariadne.html" title="Diagrama interactivo de Ariadne" loading="lazy"></iframe>
     </div>
