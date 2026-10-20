@@ -4,55 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agregar un lenguaje · Ariadne</title>
-<meta name="description" content="El patrón compartido entre extractores de Ariadne, y cómo sumar un lenguaje nuevo.">
-<style>
-  :root {
-    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
-    --line: #45475a; --accent: #89b4fa;
-    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
-    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
-  a { color: var(--accent); }
-  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
-
-  nav.top { border-bottom: 1px solid var(--line); padding: 20px 0; }
-  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-  nav.top a.home svg { width: 26px; height: 26px; }
-  @media (prefers-reduced-motion: no-preference) {
-    nav.top a.home svg { transition: transform 0.3s ease; }
-    nav.top a.home:hover svg { transform: rotate(-10deg); }
-  }
-  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
-  nav.top .crumbs a { color: var(--text-dim); }
-  nav.top .crumbs a.active { color: var(--accent); }
-
-  article { padding: 56px 0 40px; }
-  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
-  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
-  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
-  article p { color: var(--text-dim); margin: 0 0 16px; }
-  article ul, article ol { color: var(--text-dim); }
-  article li { margin-bottom: 8px; }
-  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
-  article pre { font-family: var(--mono); font-size: 14px; line-height: 1.7; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; overflow-x: auto; }
-  article pre code { background: none; padding: 0; }
-  article strong { color: var(--text); }
-
-  .reveal { opacity: 0; transform: translateY(14px); }
-  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
-  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
-
-  footer.pagefoot { border-top: 1px solid var(--line); padding: 28px 0 56px; }
-  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
-  footer.pagefoot a:hover { text-decoration: underline; }
-</style>
+<meta name="description" content="El patrón compartido entre extractores de Ariadne y cómo sumar un lenguaje nuevo.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2312141c'/%3E%3Cg clip-path='url(%23c)'%3E%3Cpath d='M15,15 L85,15 L85,85 L15,85 L15,25' fill='none' stroke='%236c93f5' stroke-width='6'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="ariadne-docs.css">
 </head>
 <body>
+
+<!-- Turbulencia para el borde escarchado de .chamber (tomado de shui) -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="ar-frost" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="t"/>
+    <feDisplacementMap in="SourceGraphic" in2="t" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+    <feGaussianBlur stdDeviation=".6"/>
+  </filter>
+</svg>
 
 <nav class="top">
   <div class="wrap">
@@ -69,9 +34,19 @@
   </div>
 </nav>
 
-<article class="wrap">
+<div class="wrap doc-layout" style="padding-top:48px;padding-bottom:16px">
+<article class="doc">
+
+  <nav class="doc-crumbs reveal" aria-label="Ruta">
+    <ol>
+      <li><a href="index.html">Ariadne</a></li>
+      <li><a href="index.html#paginas">Documentación</a></li>
+      <li aria-current="page">Agregar un lenguaje</li>
+    </ol>
+  </nav>
+
   <h1 class="reveal">Agregar un lenguaje nuevo</h1>
-  <p class="kicker reveal">El patrón compartido entre extractores</p>
+  <p class="kicker reveal" style="--c:var(--teal)"><i></i> El patrón compartido entre extractores</p>
 
   <p class="reveal">Ariadne soporta hoy 15 lenguajes para dos cosas distintas, referencias entre archivos (<code>src/extractor/imports.rs</code>) y clases, métodos y atributos (<code>src/extractor/classes.rs</code>), con el mismo patrón en ambos módulos:</p>
   <ol class="reveal">
@@ -80,50 +55,109 @@
     <li>Scanners de bajo nivel <strong>compartidos entre lenguajes</strong> para no repetir la parte difícil (encontrar dónde termina un bloque) en cada uno.</li>
   </ol>
 
-  <h2 class="reveal">Los dos estilos de "dónde termina un bloque"</h2>
-  <ul class="reveal">
-    <li><strong>Por indentación</strong> (Python, Ruby, Elixir, Julia, Haskell): el cuerpo son las líneas siguientes con más indentación que la línea de cabecera, hasta la primera línea con indentación igual o menor. Función: <code>indented_body_end</code>.</li>
-    <li><strong>Por llaves</strong> (JS/TS, Rust, Go, Java, Kotlin, PHP, C/C++): balancea <code>{ }</code> ingenuamente. Función: <code>braced_body_end</code>. Necesita las líneas ya enmascaradas, porque un solo string o comentario con una llave suelta desincroniza el conteo para el resto del archivo.</li>
-  </ul>
+  <h2 id="bloques" class="reveal">Los dos estilos de "dónde termina un bloque"</h2>
 
-  <h2 class="reveal"><code>mask_source</code>/<code>mask_line</code>: por qué existe</h2>
-  <p class="reveal">Un contador ingenuo de <code>{ }</code> o <code>( )</code> se rompe apenas hay un string, un comentario, o (en JS/TS) un literal de regex con esos caracteres adentro. <code>mask_source</code> reemplaza todo eso por espacios antes de contar, línea por línea pero con estado de bloque de comentario cruzando líneas. Esto se descubrió de la forma difícil: un comentario de varias líneas en <code>client/src/render.ts</code> desincronizaba el conteo de una clase a partir de cierto punto del archivo, y por separado un literal de regex también desbalanceaba paréntesis sin ser un comentario. Las dos causas ya están cubiertas, pero es la clase de bug que este enmascarado previene en general.</p>
+  <div class="chamber-grid reveal">
+    <div class="chamber">
+      <p class="kicker" style="--c:var(--accent-2)"><i></i> Por indentación</p>
+      <div class="badge-row">
+        <span class="badge warn">Python</span>
+        <span class="badge warn">Ruby</span>
+        <span class="badge warn">Elixir</span>
+        <span class="badge warn">Julia</span>
+        <span class="badge warn">Haskell</span>
+      </div>
+      <p>El cuerpo son las líneas siguientes con más indentación que la línea de cabecera, hasta la primera línea con indentación igual o menor. Función: <code>indented_body_end</code>.</p>
+    </div>
+    <div class="chamber">
+      <p class="kicker" style="--c:var(--accent)"><i></i> Por llaves</p>
+      <div class="badge-row">
+        <span class="badge accent">JS/TS</span>
+        <span class="badge accent">Rust</span>
+        <span class="badge accent">Go</span>
+        <span class="badge accent">Java</span>
+        <span class="badge accent">Kotlin</span>
+        <span class="badge accent">PHP</span>
+        <span class="badge accent">C/C++</span>
+      </div>
+      <p>Balancea <code>{ }</code> ingenuamente. Función: <code>braced_body_end</code>. Necesita las líneas ya enmascaradas, porque un solo string o comentario con una llave suelta desincroniza el conteo para el resto del archivo.</p>
+    </div>
+  </div>
 
-  <h2 class="reveal">Cómo agregar un lenguaje</h2>
-  <ol class="reveal">
-    <li><strong>Imports</strong> (<code>imports.rs</code>): un brazo al <code>match</code> de <code>extract_imports</code> con una función heurística de línea. Si el lenguaje tiene imports relativos a archivo, también un brazo en <code>resolve_relative_import</code>. Si tiene convención de paquete propio, una función <code>resolve_&lt;lang&gt;_absolute</code> nueva.</li>
-    <li><strong>Clases</strong> (<code>classes.rs</code>): un brazo a <code>extract_classes</code>, con una función que reusa <code>indented_body_end</code> o <code>braced_body_end</code> más <code>top_level_lines</code> según el estilo del lenguaje.</li>
-    <li><strong>Tests</strong>: cada lenguaje tiene entre 1 y 3 tests unitarios en el mismo archivo. Cubre al menos nombre de clase, un método, un atributo, y algún caso borde específico del lenguaje si lo hay.</li>
-  </ol>
+  <h2 id="mask-source" class="reveal"><code>mask_source</code>/<code>mask_line</code>: por qué existe</h2>
+  <p class="reveal">Un contador ingenuo de <code>{ }</code> o <code>( )</code> se rompe apenas hay un string, un comentario, o (en JS/TS) un literal de regex con esos caracteres adentro. <code>mask_source</code> reemplaza todo eso por espacios antes de contar, línea por línea pero con estado de bloque de comentario cruzando líneas.</p>
 
-  <h2 class="reveal">Salvedades honestas ya conocidas</h2>
-  <ul class="reveal">
-    <li><strong>Julia</strong>: no tiene métodos por diseño, porque usa multiple dispatch y no existe el concepto de "método de una clase".</li>
-    <li><strong>R</strong>: el más frágil, porque conviven dos sistemas de OOP distintos (S4 y R6) con parseo de <code>list()</code> anidado a mano.</li>
-    <li><strong>Workspaces y monorepos</strong> (Rust/Go/PHP): la resolución busca el manifiesto ancestro más cercano al archivo, descubierto escaneando el árbol. No lee <code>[workspace].members</code> de <code>Cargo.toml</code> ni nada equivalente.</li>
-  </ul>
+  <div class="callout danger reveal">
+    <p class="callout-title">Descubierto de la forma difícil</p>
+    <p>Un comentario de varias líneas en <code>client/src/render.ts</code> desincronizaba el conteo de una clase a partir de cierto punto del archivo, y por separado un literal de regex también desbalanceaba paréntesis sin ser un comentario. Las dos causas ya están cubiertas, pero es la clase de bug que este enmascarado previene en general.</p>
+  </div>
+
+  <h2 id="como-agregar" class="reveal">Cómo agregar un lenguaje</h2>
+
+  <div class="chamber reveal">
+    <div class="flowpipe">
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true">
+          <svg viewBox="0 0 26 100" preserveAspectRatio="none"><path class="rail-line" vector-effect="non-scaling-stroke" d="M13,26 L13,100"/></svg>
+        </div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">imports.rs</p>
+          <p class="flowpipe-desc">Un brazo al <code>match</code> de <code>extract_imports</code> con una función heurística de línea. Si el lenguaje tiene imports relativos a archivo, también un brazo en <code>resolve_relative_import</code>. Si tiene convención de paquete propio, una función <code>resolve_&lt;lang&gt;_absolute</code> nueva.</p>
+        </div>
+      </div>
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true">
+          <svg viewBox="0 0 26 100" preserveAspectRatio="none"><path class="rail-line" vector-effect="non-scaling-stroke" d="M13,26 L13,100"/></svg>
+        </div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">classes.rs</p>
+          <p class="flowpipe-desc">Un brazo a <code>extract_classes</code>, con una función que reusa <code>indented_body_end</code> o <code>braced_body_end</code> más <code>top_level_lines</code> según el estilo del lenguaje.</p>
+        </div>
+      </div>
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true"></div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">tests</p>
+          <p class="flowpipe-desc">Cada lenguaje tiene entre 1 y 3 tests unitarios en el mismo archivo. Cubre al menos nombre de clase, un método, un atributo, y algún caso borde específico del lenguaje si lo hay.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="salvedades" class="reveal">Salvedades honestas ya conocidas</h2>
+
+  <div class="callout warn reveal">
+    <p class="callout-title">Julia</p>
+    <p>No tiene métodos por diseño, porque usa multiple dispatch y no existe el concepto de "método de una clase".</p>
+  </div>
+  <div class="callout danger reveal">
+    <p class="callout-title">R</p>
+    <p>El más frágil, porque conviven dos sistemas de OOP distintos (S4 y R6) con parseo de <code>list()</code> anidado a mano.</p>
+  </div>
+  <div class="callout warn reveal">
+    <p class="callout-title">Workspaces y monorepos (Rust/Go/PHP)</p>
+    <p>La resolución busca el manifiesto ancestro más cercano al archivo, descubierto escaneando el árbol. No lee <code>[workspace].members</code> de <code>Cargo.toml</code> ni nada equivalente.</p>
+  </div>
+
+  <nav class="doc-pager reveal" aria-label="Páginas">
+    <a href="architecture.html"><small>← Anterior</small> Arquitectura</a>
+    <a class="next" href="git-integration.html"><small>Siguiente →</small> Integración con git</a>
+  </nav>
+
 </article>
+
+<aside class="doc-toc" aria-label="Índice de la página"></aside>
+</div>
 
 <footer class="pagefoot">
   <div class="wrap">
-    <a href="architecture.html">← Arquitectura</a>
-    <a href="git-integration.html">Siguiente: Integración con git →</a>
+    <span>Ariadne</span>
+    <a href="https://github.com/RemiH06/Ariadne">github.com/RemiH06/Ariadne</a>
+    <span>Licencia AGPL-3.0</span>
+    <span>by Hex (@RemiH06)</span>
   </div>
 </footer>
 
-<script type="module">
-  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
-  document.body.classList.add("js-ready");
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const items = document.querySelectorAll(".reveal");
-  if (reduced) {
-    items.forEach((el) => el.classList.add("in"));
-  } else {
-    items.forEach((el, i) => {
-      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
-    });
-    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
-  }
-</script>
+<script type="module" src="ariadne-docs.js"></script>
 </body>
 </html>

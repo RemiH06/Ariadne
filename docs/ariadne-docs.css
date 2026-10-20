@@ -1,0 +1,518 @@
+/* ══════════════════════════════════════════════════════
+   Ariadne · piel del sitio de documentación.
+
+   La identidad se queda como estaba: paleta Catppuccin Mocha, el azul
+   #89b4fa del hilo, tipografía de sistema (la misma que usa el diagrama
+   generado en client/src/render.ts), y el hilo como concepto.
+
+   Lo que se trae del tema `shui` de iroFactory (37.iroFactory/shui):
+     · la superficie de vidrio escarchado (allá "cubo de hielo", aquí
+       `.chamber`: una cámara del laberinto a la que llegas siguiendo el
+       hilo), con su borde pasado por turbulencia SVG y su grano;
+     · los callouts de borde lateral con título de color;
+     · el kicker con punto luminoso y las pastillas `.badge`;
+     · los bloques `pre[data-lang]` con la etiqueta del lenguaje en la
+       esquina y las clases de tinte sintáctico (.kw/.fn/.str/.num/.cm/.tp);
+     · las métricas grandes `.metric-val` / `.metric-lbl`;
+     · la base de prosa `doc-prose` (migas, índice al lado, pager,
+       desplegables, definiciones) de shared/components/doc-prose;
+     · el trazo punteado que fluye (allá linaje de datos, aquí el pipeline).
+
+   Lo que NO se trae, porque es identidad de shui y no de Ariadne: sus
+   fuentes reservadas (Y2KBUG, Recursive), el agua en canvas y la paleta
+   del Caribe o del abismo bioluminiscente.
+   ══════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #1e1e2e;
+  --bg-alt: #181825;
+  --surface: #262637;
+  --surface-2: #313244;
+  --text: #cdd6f4;
+  --text-dim: #a6adc8;
+  --line: #45475a;
+  --accent: #89b4fa;
+  --accent-2: #f9e2af;
+  --green: #a6e3a1;
+  --red: #f38ba8;
+  --mauve: #cba6f7;
+  --teal: #94e2d5;
+  --peach: #fab387;
+
+  /* Misma tipografía que usa el propio diagrama (client/src/render.ts:
+  "system-ui, sans-serif"), sin agregar una fuente decorativa nueva solo
+  para el sitio. Un eje de consistencia real, no un default sin pensar. */
+  --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
+  --display: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius: 12px;
+
+  /* Vidrio escarchado (de shui, re-tintado al azul de Ariadne en vez del
+  color del agua): el fondo de la cámara es el bg apenas levantado hacia
+  el texto, no una superficie opaca nueva. Contraste verificado sobre
+  --glass (#2a2b3c): --text 9.6:1, --text-dim 6.2:1, --accent 6.6:1. */
+  --glass:      color-mix(in srgb, var(--bg) 78%, var(--text) 6%);
+  --glass-edge: color-mix(in srgb, var(--accent) 26%, transparent);
+  --glass-glow: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+.wrap-narrow { max-width: 900px; margin: 0 auto; padding: 0 28px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════
+   CÁMARA · la superficie de vidrio escarchado de shui
+   ══════════════════════════════════════════════════════ */
+
+.chamber {
+  position: relative;
+  isolation: isolate;
+  border-radius: 16px;
+  padding: clamp(16px, 2.6vw, 26px);
+  background:
+    radial-gradient(120% 90% at 18% 0%, color-mix(in srgb, var(--text) 7%, transparent), transparent 55%),
+    var(--glass);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 0 22px var(--glass-glow),
+    inset 0 -14px 28px color-mix(in srgb, var(--bg-alt) 55%, transparent),
+    0 14px 36px rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* Borde escarchado: el contorno pasa por turbulencia SVG (filtro #ar-frost,
+declarado inline en cada página). Si ese SVG no está, se degrada al borde
+recto del box-shadow de arriba, la caja no desaparece. */
+.chamber::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--glass-edge);
+  filter: url(#ar-frost);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Grano, para que el vidrio no se lea como un degradado plano */
+.chamber::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E");
+}
+
+.chamber + .chamber { margin-top: 14px; }
+.chamber-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.chamber-grid > .chamber + .chamber { margin-top: 0; }
+
+/* ══════════════════════════════════════════════════════
+   KICKER, PASTILLAS, CALLOUTS, MÉTRICAS (de shui)
+   ══════════════════════════════════════════════════════ */
+
+/* El punto luminoso toma su color de --c, puesto en el style del elemento.
+   Los componentes que se escriben como <p> dentro de un `.doc` llevan el
+   selector `.doc p.x` además del suelto: sin eso `.doc p` (más específico
+   que una sola clase) les gana el color y el margen. */
+.doc p.kicker, .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+/* Debajo del título hace de subtítulo, y ahí necesita más aire */
+.doc h1 + .kicker { margin-bottom: 32px; }
+.kicker i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--c, var(--accent));
+  box-shadow: 0 0 10px var(--c, var(--accent));
+}
+
+.badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text-dim);
+}
+.badge.accent { border-color: var(--accent); color: var(--accent); }
+.badge.ok { border-color: var(--green); color: var(--green); }
+.badge.warn { border-color: var(--accent-2); color: var(--accent-2); }
+.badge.danger { border-color: var(--red); color: var(--red); }
+.badge.mauve { border-color: var(--mauve); color: var(--mauve); }
+.badge.teal { border-color: var(--teal); color: var(--teal); }
+.badge.peach { border-color: var(--peach); color: var(--peach); }
+
+.callout {
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  padding: 12px 18px;
+  border-radius: 0 6px 6px 0;
+  margin: 1.2em 0;
+}
+.callout + .callout { margin-top: 8px; }
+.callout .callout-title, .callout-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 2px;
+}
+.callout p:not(.callout-title) { margin: 0; font-size: 15px; max-width: 72ch; color: var(--text-dim); }
+.callout p + p { margin-top: 8px; }
+.callout.ok { border-color: var(--green); }
+.callout.ok .callout-title { color: var(--green); }
+.callout.warn { border-color: var(--accent-2); }
+.callout.warn .callout-title { color: var(--accent-2); }
+.callout.danger { border-color: var(--red); }
+.callout.danger .callout-title { color: var(--red); }
+.callout.mauve { border-color: var(--mauve); }
+.callout.mauve .callout-title { color: var(--mauve); }
+
+.metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px; }
+.doc p.metric-val, .metric-val {
+  font-family: var(--display);
+  font-size: clamp(28px, 4vw, 38px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  margin: 0;
+}
+.metric-val.warn { color: var(--accent-2); }
+.metric-val.ok { color: var(--green); }
+.metric-val.mauve { color: var(--mauve); }
+.metric-val.teal { color: var(--teal); }
+.doc p.metric-lbl, .metric-lbl { font-size: 14px; color: var(--text-dim); margin: 2px 0 0; }
+
+/* ══════════════════════════════════════════════════════
+   CÓDIGO · etiqueta de lenguaje y tinte sintáctico (de shui)
+   ══════════════════════════════════════════════════════ */
+
+/* Sin borde, a diferencia de shui: en estas páginas un párrafo llega a
+tener cuatro o cinco rutas de archivo seguidas, y la caja con filete las
+convertía en un sarpullido de recuadros. El acento de shui en el código
+se queda en los bloques `pre`, que es donde se lee como tal. */
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+pre {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.75;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 26px 20px 16px;
+  overflow-x: auto;
+  margin: 1.2em 0;
+}
+pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 5px;
+  right: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+pre code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; white-space: pre; }
+
+pre .kw { color: var(--mauve); }
+pre .fn { color: var(--accent); }
+pre .str { color: var(--green); }
+pre .num { color: var(--peach); }
+pre .cm { color: var(--text-dim); font-style: italic; }
+pre .tp { color: var(--teal); }
+pre .plus { color: var(--green); }
+pre .minus { color: var(--red); }
+
+/* ══════════════════════════════════════════════════════
+   PIPELINE · el trazo punteado que fluye (linaje de datos de shui,
+   aquí las fases del pipeline de Ariadne). Sin JS ya se ve completo:
+   la animación solo recorre el guion, no dibuja nada.
+   ══════════════════════════════════════════════════════ */
+
+.flowpipe { margin: 1.4em 0; }
+.flowpipe-stage {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 0 14px;
+  align-items: stretch;
+}
+.flowpipe-rail { position: relative; min-height: 50px; }
+
+/* El nodo de la fase: círculo de CSS, fuera del SVG estirado, para que no
+se deforme con el preserveAspectRatio="none" del riel. */
+.flowpipe-rail::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2.5px solid var(--accent);
+}
+
+.flowpipe-rail svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* vector-effect="non-scaling-stroke" va en el path: el SVG se estira en
+vertical, y sin eso el guion y el grosor se estirarían con él. */
+.flowpipe-rail .rail-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 4 6;
+  animation: flow 1.4s linear infinite;
+}
+.flowpipe-stage:last-child .flowpipe-rail .rail-line { display: none; }
+@keyframes flow { to { stroke-dashoffset: -20; } }
+@media (prefers-reduced-motion: reduce) { .flowpipe-rail .rail-line { animation: none; } }
+
+.flowpipe-body { padding: 0 0 22px; }
+.flowpipe-stage:last-child .flowpipe-body { padding-bottom: 0; }
+.doc p.flowpipe-name, .flowpipe-name { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
+.flowpipe-name span { color: var(--text-dim); font-weight: 400; }
+.doc p.flowpipe-desc, .flowpipe-desc { font-size: 14px; color: var(--text-dim); margin: 3px 0 0; max-width: 68ch; }
+
+/* ══════════════════════════════════════════════════════
+   PROSA · base doc-prose de iroFactory, con tokens de Ariadne
+   ══════════════════════════════════════════════════════ */
+
+.doc { line-height: 1.7; }
+.doc :is(h1, h2, h3, h4) {
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin: 1.6em 0 0.5em;
+  scroll-margin-top: 80px;
+}
+.doc h1 { font-size: clamp(30px, 4vw, 42px); margin-top: 0; }
+.doc h2 { font-size: clamp(22px, 2.6vw, 27px); padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+.doc h3 { font-size: 19px; }
+.doc h4 { font-size: 15px; }
+.doc p, .doc li, .doc dd { max-width: 72ch; }
+.doc p { color: var(--text-dim); margin: 0 0 1em; }
+.doc strong { color: var(--text); }
+.doc mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); padding: 0 0.2em; border-radius: 3px; }
+.doc hr { border: 0; border-top: 1px solid var(--line); margin: 2.4em 0; }
+
+.doc :is(ul, ol):not([class]) { color: var(--text-dim); margin: 0 0 1em; padding-left: 1.4em; }
+.doc :is(ul, ol):not([class]) li { margin: 0.3em 0; padding-left: 0.2em; }
+.doc :is(ul, ol):not([class]) li::marker { color: var(--accent); font-weight: 700; }
+
+.doc blockquote {
+  margin: 1.4em 0;
+  padding: 0.4em 0 0.4em 1.2em;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  font-size: 1.05em;
+}
+.doc blockquote p { color: var(--text); margin: 0 0 0.4em; }
+.doc blockquote footer { font-family: var(--mono); font-size: 0.8em; color: var(--text-dim); }
+.doc blockquote footer::before { content: '· '; }
+
+.doc kbd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.82em;
+  line-height: 1.3;
+  padding: 0.1em 0.45em;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.doc dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.6em 1.4em; margin: 0 0 1.2em; }
+.doc dt { font-family: var(--mono); font-size: 0.9em; color: var(--accent); }
+.doc dd { margin: 0; color: var(--text-dim); }
+@media (max-width: 560px) { .doc dl { grid-template-columns: minmax(0, 1fr); } .doc dd { margin-bottom: 0.6em; } }
+
+.doc details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  margin: 0.6em 0;
+}
+.doc summary {
+  cursor: pointer;
+  padding: 0.7em 1em;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-height: 44px;
+}
+.doc summary::-webkit-details-marker { display: none; }
+.doc summary::before { content: '+'; font-family: var(--mono); color: var(--accent); width: 1em; flex: 0 0 auto; }
+.doc details[open] summary::before { content: '−'; }
+.doc details > :not(summary) { margin: 0 1em 0.9em 2.6em; }
+
+.doc figure { margin: 1.4em 0; }
+.doc figcaption { font-size: 0.85em; color: var(--text-dim); margin-top: 0.6em; }
+.doc figcaption b { color: var(--text); }
+
+/* Índice al lado en pantallas anchas (doc-prose) */
+.doc-layout { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 48px; align-items: start; }
+.doc-layout > .doc-toc { position: sticky; top: 28px; }
+@media (max-width: 980px) {
+  .doc-layout { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .doc-layout > .doc-toc { position: static; order: -1; }
+}
+
+/* Sin mayúsculas ni letter-spacing en la etiqueta del índice: regla dura
+del skill de diseño, aunque shui sí lo haga en el suyo. */
+.doc-toc { font-size: 14px; }
+.doc-toc p { font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin: 0 0 0.6em; }
+.doc-toc ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--line); }
+.doc-toc a {
+  display: block;
+  padding: 0.35em 0.9em;
+  min-height: 24px;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.doc-toc .is-h3 a { padding-left: 1.8em; font-size: 13px; }
+.doc-toc a:hover { color: var(--text); }
+.doc-toc a[aria-current="true"] { color: var(--accent); border-left-color: var(--accent); }
+
+/* Migas (doc-prose) */
+.doc-crumbs ol {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.doc-crumbs li:not(:last-child)::after { content: '›'; margin-left: 6px; color: var(--line); }
+.doc-crumbs a { color: var(--text-dim); text-decoration: none; }
+.doc-crumbs a:hover { color: var(--accent); text-decoration: underline; }
+.doc-crumbs [aria-current] { color: var(--text); }
+
+/* Anterior · siguiente (doc-prose) */
+.doc-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 2.8em; }
+.doc-pager a {
+  display: grid;
+  gap: 2px;
+  padding: 0.9em 1.1em;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.doc-pager a:hover, .doc-pager a:focus-visible { border-color: var(--accent); background: var(--surface-2); }
+.doc-pager small { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+.doc-pager .next { text-align: right; grid-column: 2; }
+@media (max-width: 560px) { .doc-pager { grid-template-columns: 1fr; } .doc-pager .next { grid-column: auto; text-align: left; } }
+
+/* ══════════════════════════════════════════════════════
+   NAVEGACIÓN Y PIE
+   ══════════════════════════════════════════════════════ */
+
+nav.top { border-bottom: 1px solid var(--line); padding: 18px 0; }
+nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+nav.top a.home {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+nav.top a.home svg { width: 26px; height: 26px; }
+@media (prefers-reduced-motion: no-preference) {
+  nav.top a.home svg { transition: transform 0.3s ease; }
+  nav.top a.home:hover svg { transform: rotate(-10deg); }
+}
+nav.top .crumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+nav.top .crumbs a {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 5px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+nav.top .crumbs a:hover { color: var(--text); border-color: var(--line); }
+nav.top .crumbs a.active { color: var(--accent); border-color: var(--glass-edge); background: var(--glass); }
+
+footer.pagefoot { border-top: 1px solid var(--line); margin-top: 48px; padding: 26px 0 56px; }
+footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 14px; color: var(--text-dim); }
+footer.pagefoot a { color: var(--text-dim); }
+footer.pagefoot a:hover { color: var(--accent); }
+
+/* ══════════════════════════════════════════════════════
+   REVEAL · oculto solo si el JS logró correr
+   ══════════════════════════════════════════════════════ */
+
+.reveal { opacity: 0; transform: translateY(14px); }
+.js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
+body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } }
+
+@media (max-width: 560px) {
+  .wrap, .wrap-narrow { padding: 0 20px; }
+  body { font-size: 16px; }
+}

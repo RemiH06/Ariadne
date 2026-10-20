@@ -6,47 +6,10 @@
 <title>Ariadne: diagrama y documentación de proyectos</title>
 <meta name="description" content="Ariadne analiza un proyecto de código y genera un diagrama HTML interactivo y documentación exportable, el hilo para no perderte en un codebase tuyo o ajeno.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2312141c'/%3E%3Cg clip-path='url(%23c)'%3E%3Cpath d='M15,15 L85,15 L85,85 L15,85 L15,25' fill='none' stroke='%236c93f5' stroke-width='6'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="ariadne-docs.css">
 <style>
-  :root {
-    --bg: #1e1e2e;
-    --bg-alt: #181825;
-    --surface: #262637;
-    --surface-2: #313244;
-    --text: #cdd6f4;
-    --text-dim: #a6adc8;
-    --line: #45475a;
-    --accent: #89b4fa;
-    --accent-2: #f9e2af;
-    --green: #a6e3a1;
-    --red: #f38ba8;
-    /* Misma tipografía que usa el propio diagrama (client/src/render.ts:
-    "system-ui, sans-serif"), sin agregar una fuente decorativa nueva solo
-    para el sitio. Un eje de consistencia real, no un default sin pensar. */
-    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
-    --display: system-ui, -apple-system, "Segoe UI", sans-serif;
-    --body: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--body);
-    font-size: 17px;
-    line-height: 1.65;
-  }
-
-  a { color: var(--accent); }
-  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-
-  .wrap {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 0 28px;
-  }
+  /* Solo lo propio de la portada. Tokens, cámaras de vidrio, callouts,
+  pastillas, métricas, prosa y pie viven en ariadne-docs.css. */
 
   /* ---------- intro: un hilo se dibuja solo cruzando el hero, una vez ---------- */
 
@@ -116,20 +79,23 @@
     margin: 22px 0 0;
   }
 
+  /* Placa de vidrio del hero: el hilo pasa por detrás y el comando sigue
+  legible encima. Mismo material que las cámaras, en versión pastilla. */
   .hero-tag {
+    display: inline-block;
     font-family: var(--mono);
     font-size: 13px;
     color: var(--text-dim);
     margin-top: 18px;
-    opacity: 0.75;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
   }
 
-  /* ---------- reveal genérico: oculto por defecto solo si el JS corre ---------- */
-
-  .reveal { opacity: 0; transform: translateY(18px); }
-  .js-ready .reveal { opacity: 0; transform: translateY(18px); }
-  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.6s ease, transform 0.6s ease; }
-  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
+  .hero-tag b { color: var(--accent); font-weight: 400; }
 
   /* ---------- descripción ---------- */
 
@@ -142,7 +108,7 @@
     align-items: start;
   }
 
-  @media (max-width: 760px) { .intro-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .intro-grid { grid-template-columns: 1fr; gap: 32px; } }
 
   .intro-grid h2 {
     font-family: var(--display);
@@ -180,27 +146,11 @@
 
   .highlights-section { padding: 64px 0; background: var(--bg-alt); border-bottom: 1px solid var(--line); }
 
-  .highlights-heading {
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--text-dim);
-    margin: 0 0 24px;
-  }
+  /* El diff hereda pre de la hoja compartida (con etiqueta de lenguaje en
+  la esquina y el filete de acento a la izquierda), solo cambia el aire. */
+  pre.diff { font-size: 14.5px; line-height: 1.9; background: var(--bg); padding: 26px 26px 20px; }
 
-  pre.diff {
-    font-family: var(--mono);
-    font-size: 14.5px;
-    line-height: 1.9;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 22px 26px;
-    overflow-x: auto;
-    margin: 0;
-  }
-
-  pre.diff .plus { color: var(--green); }
-  pre.diff .minus { color: var(--red); }
+  .metrics-chamber { margin-top: 18px; }
 
   /* ---------- el diagrama, incrustado como forma de navegar ---------- */
 
@@ -261,28 +211,30 @@
     gap: 18px;
   }
 
+  /* Cada página es una cámara del laberinto: la superficie de vidrio sale
+  de .chamber, aquí solo se agrega el comportamiento de link. */
   .page-card {
     display: block;
     text-decoration: none;
     color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 22px 22px 24px;
-    transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
   }
+
+  .page-card:hover::before { border-color: var(--accent); }
 
   .page-card:hover {
     transform: translateY(-4px);
-    border-color: var(--accent);
-    background: var(--surface-2);
+    box-shadow:
+      inset 0 0 0 1px var(--accent),
+      inset 0 0 22px var(--glass-glow),
+      inset 0 -14px 28px color-mix(in srgb, var(--bg-alt) 55%, transparent),
+      0 18px 42px rgba(0, 0, 0, 0.38);
   }
 
   .page-card .num {
     font-family: var(--mono);
     font-size: 12px;
     color: var(--accent);
-    opacity: 0.8;
   }
 
   .page-card h3 {
@@ -305,16 +257,14 @@
   }
 
   .page-card:hover h3 .go { opacity: 1; transform: none; }
-  .page-card .num { transition: opacity 0.25s ease; }
-  .page-card:hover .num { opacity: 1; }
 
   .page-card p { margin: 0; font-size: 14px; color: var(--text-dim); }
 
   /* ---------- footer ---------- */
 
-  footer { padding: 40px 0 64px; }
+  footer.home { padding: 40px 0 64px; }
 
-  .footer-row {
+  footer.home .footer-row {
     display: flex;
     justify-content: space-between;
     flex-wrap: wrap;
@@ -325,11 +275,20 @@
     border-top: 1px solid var(--line);
   }
 
-  .footer-row a { color: var(--text-dim); }
-  .footer-row a:hover { color: var(--accent); }
+  footer.home .footer-row a { color: var(--text-dim); }
+  footer.home .footer-row a:hover { color: var(--accent); }
 </style>
 </head>
 <body>
+
+<!-- Turbulencia para el borde escarchado de .chamber (tomado de shui) -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="ar-frost" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="t"/>
+    <feDisplacementMap in="SourceGraphic" in2="t" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+    <feGaussianBlur stdDeviation=".6"/>
+  </filter>
+</svg>
 
 <header class="hero">
   <svg class="thread-intro" viewBox="0 0 1080 400" preserveAspectRatio="none" aria-hidden="true">
@@ -354,7 +313,7 @@
     <div>
       <h1 class="hero-title">Ariadne</h1>
       <p class="hero-subtitle">El hilo para no perderte en un codebase, tuyo o de alguien más.</p>
-      <p class="hero-tag">ariadne generate . &nbsp;→&nbsp; un diagrama interactivo, autocontenido, en un solo HTML</p>
+      <p class="hero-tag"><b>ariadne generate .</b> &nbsp;→&nbsp; un diagrama interactivo, autocontenido, en un solo HTML</p>
     </div>
   </div>
 </header>
@@ -375,13 +334,34 @@
 
 <section class="highlights-section">
   <div class="wrap">
-    <p class="highlights-heading reveal">Lo que hace, y lo que no</p>
-    <pre class="diff reveal"><span class="plus">+ Diagrama HTML interactivo y autocontenido, funciona con file:// o en GitHub Pages</span>
+    <p class="kicker reveal" style="--c:var(--accent)"><i></i> Lo que hace, y lo que no</p>
+    <pre class="diff reveal" data-lang="diff"><code><span class="plus">+ Diagrama HTML interactivo y autocontenido, funciona con file:// o en GitHub Pages</span>
 <span class="plus">+ 15 lenguajes: referencias entre archivos, clases/métodos/atributos, dependencias declaradas</span>
 <span class="plus">+ Autor y fecha de git por archivo, colorear por antigüedad, "ver historial", link a documentación propia</span>
 <span class="plus">+ Exporta a PDF/LaTeX/RTF/XML vía Pandoc, desde el mismo grafo</span>
 <span class="minus">- No es un parser AST real: es heurística de texto, se rompe con macros o metaprogramación poco convencional</span>
-<span class="minus">- No hace blame línea por línea: para eso, abre el archivo directo</span></pre>
+<span class="minus">- No hace blame línea por línea: para eso, abre el archivo directo</span></code></pre>
+
+    <div class="chamber metrics-chamber reveal">
+      <div class="metric-row">
+        <div>
+          <p class="metric-val teal">15</p>
+          <p class="metric-lbl">lenguajes reconocidos</p>
+        </div>
+        <div>
+          <p class="metric-val">1</p>
+          <p class="metric-lbl">archivo HTML de salida</p>
+        </div>
+        <div>
+          <p class="metric-val ok">0</p>
+          <p class="metric-lbl">requests externos al abrirlo</p>
+        </div>
+        <div>
+          <p class="metric-val mauve">5</p>
+          <p class="metric-lbl">formatos de export (HTML, PDF, LaTeX, RTF, XML)</p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -397,26 +377,26 @@
   </div>
 </section>
 
-<section class="pages-section">
+<section class="pages-section" id="paginas">
   <div class="wrap">
     <h2 class="reveal">Las 4 páginas, directo</h2>
     <div class="pages-grid">
-      <a class="page-card reveal" href="architecture.html">
+      <a class="chamber page-card reveal" href="architecture.html">
         <span class="num">01</span>
         <h3>Arquitectura <span class="go">→</span></h3>
         <p>El pipeline completo y por qué usa heurística de texto en vez de un parser AST.</p>
       </a>
-      <a class="page-card reveal" href="extending-languages.html">
+      <a class="chamber page-card reveal" href="extending-languages.html">
         <span class="num">02</span>
         <h3>Agregar un lenguaje <span class="go">→</span></h3>
         <p>El patrón compartido entre extractores, y cómo sumar uno nuevo.</p>
       </a>
-      <a class="page-card reveal" href="git-integration.html">
+      <a class="chamber page-card reveal" href="git-integration.html">
         <span class="num">03</span>
         <h3>Integración con git <span class="go">→</span></h3>
         <p>Por qué usa git log por CLI, y por qué el historial se precalcula.</p>
       </a>
-      <a class="page-card reveal" href="docs-linking.html">
+      <a class="chamber page-card reveal" href="docs-linking.html">
         <span class="num">04</span>
         <h3>Vincular documentación <span class="go">→</span></h3>
         <p>Cómo funciona [[docs.pages]]. Esta misma página lo explica.</p>
@@ -425,7 +405,7 @@
   </div>
 </section>
 
-<footer>
+<footer class="home">
   <div class="wrap">
     <div class="footer-row">
       <span>Ariadne</span>
@@ -436,12 +416,11 @@
   </div>
 </footer>
 
+<!-- .js-ready y los reveals los pone la hoja compartida; este script solo
+agrega lo propio del hero. -->
+<script type="module" src="ariadne-docs.js"></script>
 <script type="module">
-  import { animate, inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
-
-  // Si este import falla, .js-ready nunca se agrega y todo el contenido ya
-  // es visible por default (ver ".reveal" en el CSS). Nada se rompe.
-  document.body.classList.add("js-ready");
+  import { animate } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -518,24 +497,6 @@
       animate(badge, { rotate: 0, y: 0 }, { duration: 0.5, easing: "ease-out" });
     });
   }
-
-  // --- reveals sutiles al entrar en viewport, escalonados dentro de cada sección ---
-  const sections = document.querySelectorAll(".intro-section, .highlights-section, .diagram-section, .pages-section");
-  sections.forEach((section) => {
-    const items = section.querySelectorAll(".reveal");
-    if (reduced) {
-      items.forEach((el) => el.classList.add("in"));
-      return;
-    }
-    inView(section, () => {
-      items.forEach((el, i) => {
-        setTimeout(() => el.classList.add("in"), i * 90);
-      });
-    }, { amount: 0.2 });
-    // Red de seguridad: si inView nunca dispara para esta sección, el
-    // contenido no debe quedar invisible para siempre.
-    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
-  });
 </script>
 </body>
 </html>

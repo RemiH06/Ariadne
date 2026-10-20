@@ -4,63 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vincular documentación · Ariadne</title>
-<meta name="description" content="Cómo [[docs.pages]] conecta nodos del grafo a páginas de documentación propias con un simple link.">
-<style>
-  :root {
-    --bg: #1e1e2e; --surface: #262637; --text: #cdd6f4; --text-dim: #a6adc8;
-    --line: #45475a; --accent: #89b4fa;
-    --mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", monospace;
-    --display: system-ui, -apple-system, "Segoe UI", sans-serif; --body: system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); font-size: 17px; line-height: 1.7; }
-  a { color: var(--accent); }
-  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
-
-  nav.top { border-bottom: 1px solid var(--line); padding: 20px 0; }
-  nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  nav.top a.home { font-family: var(--display); font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-  nav.top a.home svg { width: 26px; height: 26px; }
-  @media (prefers-reduced-motion: no-preference) {
-    nav.top a.home svg { transition: transform 0.3s ease; }
-    nav.top a.home:hover svg { transform: rotate(-10deg); }
-  }
-  nav.top .crumbs { font-family: var(--mono); font-size: 13px; color: var(--text-dim); display: flex; gap: 14px; }
-  nav.top .crumbs a { color: var(--text-dim); }
-  nav.top .crumbs a.active { color: var(--accent); }
-
-  article { padding: 56px 0 40px; }
-  article h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4vw, 42px); margin: 0 0 8px; }
-  .kicker { font-family: var(--mono); font-size: 13px; color: var(--text-dim); margin: 0 0 36px; }
-  article h2 { font-family: var(--display); font-weight: 700; font-size: 23px; margin: 44px 0 14px; }
-  article p { color: var(--text-dim); margin: 0 0 16px; }
-  article code { font-family: var(--mono); font-size: 0.9em; background: var(--surface); padding: 1px 6px; border-radius: 4px; color: var(--text); }
-  article pre { font-family: var(--mono); font-size: 14px; line-height: 1.7; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; overflow-x: auto; }
-  article pre code { background: none; padding: 0; }
-  article strong { color: var(--text); }
-  article ol { color: var(--text-dim); }
-  article li { margin-bottom: 8px; }
-
-  .callout {
-    border: 1px dashed var(--accent);
-    border-radius: 10px;
-    padding: 16px 20px;
-    color: var(--text-dim);
-    font-size: 15px;
-  }
-
-  .reveal { opacity: 0; transform: translateY(14px); }
-  .js-ready .reveal.in { opacity: 1; transform: none; transition: opacity 0.55s ease, transform 0.55s ease; }
-  body:not(.js-ready) .reveal { opacity: 1; transform: none; }
-
-  footer.pagefoot { border-top: 1px solid var(--line); padding: 28px 0 56px; }
-  footer.pagefoot .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  footer.pagefoot a { font-family: var(--mono); font-size: 14px; text-decoration: none; }
-  footer.pagefoot a:hover { text-decoration: underline; }
-</style>
+<meta name="description" content="Cómo funciona [[docs.pages]] en Ariadne: un mapeo explícito de nodo a URL, sin embeber nada.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2312141c'/%3E%3Cg clip-path='url(%23c)'%3E%3Cpath d='M15,15 L85,15 L85,85 L15,85 L15,25' fill='none' stroke='%236c93f5' stroke-width='6'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="ariadne-docs.css">
 </head>
 <body>
+
+<!-- Turbulencia para el borde escarchado de .chamber (tomado de shui) -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <filter id="ar-frost" x="-5%" y="-5%" width="110%" height="110%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="7" result="t"/>
+    <feDisplacementMap in="SourceGraphic" in2="t" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+    <feGaussianBlur stdDeviation=".6"/>
+  </filter>
+</svg>
 
 <nav class="top">
   <div class="wrap">
@@ -77,54 +34,96 @@
   </div>
 </nav>
 
-<article class="wrap">
+<div class="wrap doc-layout" style="padding-top:48px;padding-bottom:16px">
+<article class="doc">
+
+  <nav class="doc-crumbs reveal" aria-label="Ruta">
+    <ol>
+      <li><a href="index.html">Ariadne</a></li>
+      <li><a href="index.html#paginas">Documentación</a></li>
+      <li aria-current="page">Vincular documentación</li>
+    </ol>
+  </nav>
+
   <h1 class="reveal">Vincular documentación</h1>
-  <p class="kicker reveal">Cómo funciona [[docs.pages]]</p>
+  <p class="kicker reveal" style="--c:var(--mauve)"><i></i> Cómo funciona [[docs.pages]]</p>
 
-  <p class="reveal callout">Estás leyendo la prueba viviente de esta funcionalidad: esta página existe porque <code>conf.ariadne</code>, en la raíz del repo, tiene una entrada <code>[[docs.pages]]</code> que conecta el nodo <code>src/render/docs/pages.rs</code> (justo el archivo que la hace posible) con esta URL. Si llegaste aquí desde el panel "Nodo seleccionado" del diagrama, ya viste la funcionalidad de punta a punta.</p>
+  <div class="chamber reveal">
+    <p class="kicker" style="--c:var(--accent-2)"><i></i> Prueba viviente</p>
+    <p>Estás leyendo la prueba viviente de esta funcionalidad: esta página existe porque <code>conf.ariadne</code>, en la raíz del repo, tiene una entrada <code>[[docs.pages]]</code> que conecta el nodo <code>src/render/docs/pages.rs</code> (justo el archivo que la hace posible) con esta URL. Si llegaste aquí desde el panel "Nodo seleccionado" del diagrama, ya viste la funcionalidad de punta a punta.</p>
+  </div>
 
-  <h2 class="reveal">Por qué es un link y no contenido embebido</h2>
+  <h2 id="link-no-embebido" class="reveal">Por qué es un link y no contenido embebido</h2>
   <p class="reveal">La primera versión de esta funcionalidad convertía Markdown a HTML y lo embebía dentro del propio diagrama, en una sección "Documentación" aparte. Se simplificó a propósito. El diagrama sirve para navegar la documentación, no para mostrarla, y una página de documentación real (con sus propias animaciones, su propio diseño, su propio lugar en un sitio) funciona mejor viviendo aparte que encajada dentro del HTML de otra cosa. Ariadne ya no lee ni convierte nada: solo valida que el nodo exista y le pasa la URL al cliente.</p>
 
-  <h2 class="reveal">Por qué es un mapeo explícito y no un auto-descubrimiento</h2>
-  <p class="reveal">La alternativa obvia sería una convención del tipo "si existe <code>docs/&lt;mismo-nombre&gt;.html</code>, conéctalo solo", pero eso falla en cuanto un proyecto real no sigue esa convención. La mayoría no la sigue: la documentación vive en cualquier estructura, con cualquier nombre, a veces ni siquiera cerca del código que documenta, y a veces ni siquiera en el mismo repositorio (puede estar en el GitHub Pages de otro proyecto). Un mapeo explícito en <code>conf.ariadne</code> es más largo de escribir, pero <strong>nunca falla en silencio</strong>: o el nodo existe, o <code>ariadne generate</code> falla con un error claro que señala cuál entrada está mal.</p>
+  <h2 id="explicito" class="reveal">Por qué es un mapeo explícito y no un auto-descubrimiento</h2>
+  <p class="reveal">La alternativa obvia sería una convención del tipo "si existe <code>docs/&lt;mismo-nombre&gt;.html</code>, conéctalo solo", pero eso falla en cuanto un proyecto real no sigue esa convención. La mayoría no la sigue: la documentación vive en cualquier estructura, con cualquier nombre, a veces ni siquiera cerca del código que documenta, y a veces ni siquiera en el mismo repositorio (puede estar en el GitHub Pages de otro proyecto).</p>
 
-  <h2 class="reveal">Cómo se arma</h2>
-  <pre class="reveal"><code>[[docs.pages]]
-node = "src/render/docs/pages.rs"   # debe coincidir con el id de un nodo del grafo
-url  = "docs-linking.html"          # relativa, o una URL absoluta</code></pre>
+  <div class="callout ok reveal">
+    <p class="callout-title">Nunca falla en silencio</p>
+    <p>Un mapeo explícito en <code>conf.ariadne</code> es más largo de escribir, pero o el nodo existe, o <code>ariadne generate</code> falla con un error claro que señala cuál entrada está mal.</p>
+  </div>
+
+  <h2 id="como-se-arma" class="reveal">Cómo se arma</h2>
+
+  <pre class="reveal" data-lang="toml"><code><span class="kw">[[docs.pages]]</span>
+<span class="fn">node</span> = <span class="str">"src/render/docs/pages.rs"</span>   <span class="cm"># debe coincidir con el id de un nodo del grafo</span>
+<span class="fn">url</span>  = <span class="str">"docs-linking.html"</span>          <span class="cm"># relativa, o una URL absoluta</span></code></pre>
 
   <p class="reveal">Al generar (<code>src/cli/generate.rs</code>) pasan tres cosas:</p>
-  <ol class="reveal">
-    <li><code>build_doc_pages</code> (<code>src/render/docs/pages.rs</code>) resuelve cada entrada contra el grafo ya construido. Solo valida que el <code>node</code> exista, nada más.</li>
-    <li>El nodo correspondiente gana <code>metadata.doc_url</code>, que el cliente usa para dibujar la estrella y como <code>href</code> del link "Ir a documentación".</li>
-    <li>Nada se renderiza ni se embebe. El link simplemente lleva a donde pusiste el contenido, como cualquier link normal.</li>
-  </ol>
 
-  <h2 class="reveal">Por qué solo archivos y no carpetas</h2>
+  <div class="chamber reveal">
+    <div class="flowpipe">
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true">
+          <svg viewBox="0 0 26 100" preserveAspectRatio="none"><path class="rail-line" vector-effect="non-scaling-stroke" d="M13,26 L13,100"/></svg>
+        </div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">build_doc_pages <span>· src/render/docs/pages.rs</span></p>
+          <p class="flowpipe-desc">Resuelve cada entrada contra el grafo ya construido. Solo valida que el <code>node</code> exista, nada más.</p>
+        </div>
+      </div>
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true">
+          <svg viewBox="0 0 26 100" preserveAspectRatio="none"><path class="rail-line" vector-effect="non-scaling-stroke" d="M13,26 L13,100"/></svg>
+        </div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">metadata.doc_url</p>
+          <p class="flowpipe-desc">El nodo correspondiente gana este campo, que el cliente usa para dibujar la estrella y como <code>href</code> del link "Ir a documentación".</p>
+        </div>
+      </div>
+      <div class="flowpipe-stage">
+        <div class="flowpipe-rail" aria-hidden="true"></div>
+        <div class="flowpipe-body">
+          <p class="flowpipe-name">nada se embebe</p>
+          <p class="flowpipe-desc">El link simplemente lleva a donde pusiste el contenido, como cualquier link normal.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="solo-archivos" class="reveal">Por qué solo archivos y no carpetas</h2>
   <p class="reveal">Una carpeta podría en teoría tener una página de resumen del módulo, pero documentar una carpeta y documentar todo lo que se tocó dentro de ella son cosas distintas, y mezclarlas hubiera complicado el diseño sin un caso de uso concreto que lo pidiera. El <code>node</code> de <code>[[docs.pages]]</code> podría apuntar a un id de carpeta sin cambios grandes si esa necesidad aparece, pero no se construyó de forma especulativa.</p>
+
+  <nav class="doc-pager reveal" aria-label="Páginas">
+    <a href="git-integration.html"><small>← Anterior</small> Integración con git</a>
+    <a class="next" href="index.html"><small>Siguiente →</small> Volver al inicio</a>
+  </nav>
+
 </article>
+
+<aside class="doc-toc" aria-label="Índice de la página"></aside>
+</div>
 
 <footer class="pagefoot">
   <div class="wrap">
-    <a href="git-integration.html">← Integración con git</a>
-    <a href="index.html">Volver al inicio →</a>
+    <span>Ariadne</span>
+    <a href="https://github.com/RemiH06/Ariadne">github.com/RemiH06/Ariadne</a>
+    <span>Licencia AGPL-3.0</span>
+    <span>by Hex (@RemiH06)</span>
   </div>
 </footer>
 
-<script type="module">
-  import { inView } from "https://cdn.jsdelivr.net/npm/motion@11/+esm";
-  document.body.classList.add("js-ready");
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const items = document.querySelectorAll(".reveal");
-  if (reduced) {
-    items.forEach((el) => el.classList.add("in"));
-  } else {
-    items.forEach((el, i) => {
-      inView(el, () => { setTimeout(() => el.classList.add("in"), (i % 3) * 60); }, { amount: 0.2 });
-    });
-    setTimeout(() => items.forEach((el) => el.classList.add("in")), 4000);
-  }
-</script>
+<script type="module" src="ariadne-docs.js"></script>
 </body>
 </html>

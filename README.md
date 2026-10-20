@@ -59,6 +59,7 @@ Ariadne, con su propio diagrama incrustado como forma de navegar.
 │   └── assets/           # bundle de JS, sprite de íconos, logo, skill de agente, todo embebido en el binario
 ├── client/               # TypeScript + D3, compilado a un solo bundle con esbuild
 ├── docs/                 # sitio de documentación propio (GitHub Pages), index.html incrusta el diagrama como navegación
+│   └── ariadne-docs.css  # piel compartida de las páginas: tokens de Ariadne + componentes del tema shui de iroFactory
 ├── conf.ariadne          # config de Ariadne documentándose a sí misma
 └── conf.ariadne.example  # referencia comentada de cada sección
 ```
